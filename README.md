@@ -6,20 +6,20 @@ Colorizes black-and-white clips by propagating color from reference frames using
 
 ---
 
-## Requirements
+## Installation
 
-- **Python** ≥ 3.12
-- **VapourSynth** ≥ R74
-- **CUDA-capable GPU** with PyTorch ≥ 2.9.1
+Download the latest wheel from [Releases](https://github.com/dan64/vs-cmnet2/releases) and install:
 
-### 
+```bash
+pip install vscmnet2-1.0.0-py3-none-any.whl
+```
 
-### VapourSynth plugins
+### Plugins setup
 
-Place the following `.dll` files under `vscmnet2/plugins/`:
+Download `plugins_win.zip` from the [latest release](https://github.com/dan64/vs-cmnet2/releases) and extract it into `vscmnet2/plugins/`. The resulting tree will be:
 
 ```
-plugins/
+vscmnet2/plugins/
 ├── Support/
 │   ├── TCanny.dll          # Edge detection
 │   └── akarin.dll          # Expression evaluation
@@ -31,60 +31,34 @@ plugins/
     └── vcruntime140_1.dll
 ```
 
-| Plugin       | Source                                                                                                            |
-| ------------ | ----------------------------------------------------------------------------------------------------------------- |
-| TCanny       | [HomeOfVapourSynthEvolution/VapourSynth-TCanny](https://github.com/HomeOfVapourSynthEvolution/VapourSynth-TCanny) |
-| Akarin       | [AkarinVS/vapoursynth-plugin](https://github.com/AkarinVS/vapoursynth-plugin)                                     |
-| MiscFilters  | [vapoursynth/vs-miscfilters-obsolete](https://github.com/vapoursynth/vs-miscfilters-obsolete)                     |
-| LSMASHSource | [AkarinVS/L-SMASH-Works](https://github.com/AkarinVS/L-SMASH-Works)                                               |
+### Model weights
+
+See [Model Weights](#model-weights) below.
+
+---
+
+## Requirements
+
+- **Python** ≥ 3.12
+- **VapourSynth** ≥ R74
+- **CUDA-capable GPU** with PyTorch ≥ 2.9.1
 
 ---
 
 ## Model Weights
 
-The filter needs several pre-trained weights. Download and place them as follows:
+Download the following files from the [CMNET2 v1.0.0 Release](https://github.com/dan64/cmnet2/releases/tag/v1.0.0) and place them in the correct directories under `vscmnet2/`:
 
-### 1. CMNET2 checkpoint (required)
+| File | Destination | Download |
+|---|---|---|
+| `DINOv2FeatureV6_LocalAtten_s2_154000.pth` | `vscmnet2/weights/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.0.0/DINOv2FeatureV6_LocalAtten_s2_154000.pth) |
+| `dinov2_vits14_pretrain.pth` | `vscmnet2/models/checkpoints/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.0.0/dinov2_vits14_pretrain.pth) |
+| `resnet18-5c106cde.pth` | `vscmnet2/models/checkpoints/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.0.0/resnet18-5c106cde.pth) |
+| `resnet50-19c8e357.pth` | `vscmnet2/models/checkpoints/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.0.0/resnet50-19c8e357.pth) |
 
-Download from the [CMNET2 releases](https://github.com/dan64/cmnet2/releases):
+> **Note:** The DINOv2 source code (`facebookresearch_dinov2_main/`) is already included in this repository under `vscmnet2/models/`.
 
-```
-vscmnet2/weights/
-└── DINOv2FeatureV6_LocalAtten_s2_154000.pth    (~472 MB)
-```
-
-### 2. DINOv2 backbone (required)
-
-Download the ViT-S/14 pretrained checkpoint:
-
-```
-vscmnet2/models/checkpoints/
-└── dinov2_vits14_pretrain.pth    (~84 MB)
-```
-
-```
-wget https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_pretrain.pth \
-     -O vscmnet2/models/checkpoints/dinov2_vits14_pretrain.pth
-```
-
-### 3. ResNet backbones (required)
-
-```
-vscmnet2/models/checkpoints/
-├── resnet18-5c106cde.pth    (~45 MB)
-└── resnet50-19c8e357.pth    (~98 MB)
-```
-
-These are standard torchvision weights downloaded automatically on first run. If you are offline, download them manually:
-
-```
-wget https://download.pytorch.org/models/resnet18-5c106cde.pth \
-     -O vscmnet2/models/checkpoints/resnet18-5c106cde.pth
-wget https://download.pytorch.org/models/resnet50-19c8e357.pth \
-     -O vscmnet2/models/checkpoints/resnet50-19c8e357.pth
-```
-
-### 4. DiT model (optional — for vs_cmnet2dit)
+### 4. DiT model (optional — for `vs_cmnet2dit`)
 
 The DiT path uses a **DiT Engine Server** running separately. Start the server pointing to a [Nunchaku](https://github.com/mit-han-lab/nunchaku) SVD quant model, then connect via:
 
@@ -94,21 +68,12 @@ clip = vs_cmnet2dit(clip, dit_engine_params={"host": "127.0.0.1", "port": 8765})
 
 ---
 
-## Installation
-
-```bash
-pip install vscmnet2-1.0.0-py3-none-any.whl
-```
-
-Then copy the plugin DLLs into `vscmnet2/plugins/` and the model weights as described above.
-
----
-
 ## Usage
 
 ### Basic colorization with external reference clip
 
 ```python
+from vscmnet2 import vs_cmnet2
 clip = vs_cmnet2(clip, clip_ref=ref_clip, method=6)
 ```
 
@@ -144,7 +109,8 @@ clip = vs_cmnet2dit(
     clip,
     dit_engine_params={
         "host": "127.0.0.1",
-        "port": 8765},
+        "port": 8765,
+    },
     max_memory_frames=20,
 )
 ```
@@ -163,35 +129,35 @@ clip = vs_read_video("/path/to/video.mkv")
 
 ### `vs_cmnet2`
 
-| Parameter           | Type      | Default   | Description                                            |
-| ------------------- | --------- | --------- | ------------------------------------------------------ |
-| `clip`              | VideoNode | —         | B&W input clip                                         |
-| `clip_ref`          | VideoNode | `None`    | Reference clip (method 5,6)                            |
-| `method`            | int       | `0`       | Reference frame generation:  3-4=external, 5-6=clipRef |
-| `render_speed`      | str       | `"auto"`  | `auto`, `fast`, `medium`, `slow`, `slower`             |
-| `render_vivid`      | bool      | `False`   | +15% saturation boost                                  |
-| `encode_mode`       | int       | `0`       | 0=remote (recommended), 1=local                        |
-| `max_memory_frames` | int       | `0` (→20) | Permanent-memory window size (even, 10–500)            |
-| `ref_mode`          | int       | `1`       | 0=direct folder, 1=VS clips                            |
-| `retry_threshold`   | float     | `0.0`     | Retry trigger (0.0=disabled; suggest 0.20–0.35)        |
-| `retry_model`       | int       | `0`       | 0=DeOldify+DDColor, 1=DiT fp4, 2=DiT int4              |
-| `torch_dir`         | str       | model dir | Torch hub cache location                               |
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `clip` | VideoNode | — | B&W input clip |
+| `clip_ref` | VideoNode | `None` | Reference clip (method 5,6) |
+| `method` | int | `0` | Reference frame generation: 3-4=external, 5-6=clipRef |
+| `render_speed` | str | `"auto"` | `auto`, `fast`, `medium`, `slow`, `slower` |
+| `render_vivid` | bool | `False` | +15% saturation boost |
+| `encode_mode` | int | `0` | 0=remote (recommended), 1=local |
+| `max_memory_frames` | int | `0` (→20) | Permanent-memory window size (even, 10–500) |
+| `ref_mode` | int | `1` | 0=direct folder, 1=VS clips |
+| `retry_threshold` | float | `0.0` | Retry trigger (0.0=disabled; suggest 0.20–0.35) |
+| `retry_model` | int | `0` | 0=DeOldify+DDColor, 1=DiT fp4, 2=DiT int4 |
+| `torch_dir` | str | model dir | Torch hub cache location |
 
 ### `vs_cmnet2dit`
 
-| Parameter           | Type      | Default   | Description                               |
-| ------------------- | --------- | --------- | ----------------------------------------- |
-| `clip`              | VideoNode | —         | B&W input clip                            |
-| `sc_thresh`         | float     | `0.035`   | Scene-detect threshold                    |
-| `sc_min_int`        | int       | `25`      | Min frame distance between scene changes  |
-| `max_memory_frames` | int       | `0` (→20) | Permanent-memory window (even, pair-wise) |
-| `dit_engine_params` | dict      | `None`    | DiT Engine Server connection              |
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `clip` | VideoNode | — | B&W input clip |
+| `sc_thresh` | float | `0.035` | Scene-detect threshold |
+| `sc_min_int` | int | `25` | Min frame distance between scene changes |
+| `max_memory_frames` | int | `0` (→20) | Permanent-memory window (even, pair-wise) |
+| `dit_engine_params` | dict | `None` | DiT Engine Server connection |
 
 ---
 
 ## Model Architecture
 
-CMNET2 (Colorization Memory Network v2) is an exemplar-based video colorization model derived from XMem. It maintains a **sliding permanent memory** of reference frames and propagates color through a space-time memory network. The architecture uses:
+CMNET2 (Colorization Memory Network v2) is an exemplar-based video colorization model. It maintains a **sliding permanent memory** of reference frames and propagates color through a space-time memory network. The architecture uses:
 
 - **DINOv2 ViT-S/14** as the key encoder backbone
 - **ResNet-18** and **ResNet-50** as value encoders
@@ -232,8 +198,8 @@ vscmnet2/
 ├── weights/             # CMNET2 model weights
 ├── models/
 │   ├── checkpoints/     # Backbone weights (DINOv2, ResNet)
-│   └── facebookresearch_dinov2_main/  # DINOv2 source (optional)
-└── plugins/             # VapourSynth .dll plugins
+│   └── facebookresearch_dinov2_main/  # DINOv2 source
+└── plugins/             # VapourSynth .dll plugins (from plugins_win.zip)
 ```
 
 ---
