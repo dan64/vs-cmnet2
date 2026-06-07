@@ -58,6 +58,18 @@ Download the following files from the [CMNET2 v1.0.0 Release](https://github.com
 
 > **Note:** The DINOv2 source code (`facebookresearch_dinov2_main/`) is already included in this repository under `vscmnet2/models/`.
 
+
+## Install spatial_correlation_sampler
+
+In the [Release 1.0.0](https://github.com/dan64/vs-cmnet2/releases/download/v1.0.0/spatial_correlation_sampler-0.5.0-cp312-cp312-win_amd64_torch-2.10+cu130.zip) there is an archive with a compiled version (PyTorch 2.10 + CUDA 13.0) of [Pytorch-Correlation-extension](https://github.com/ClementPinard/Pytorch-Correlation-extension), required by `vscmnet2` for temporal alignment during encoding:
+
+```powershell
+pip install spatial_correlation_sampler-0.5.0-cp312-cp312-win_amd64.whl
+```
+
+> The wheel is pre-built for **Python 3.12 / PyTorch 2.10+cu130 / Windows x64**.
+> It will only work with that exact combination. For other environments it will be necessary build the wheel from sources.
+
 ### 4. DiT model (optional — for `vs_cmnet2dit`)
 
 The DiT path uses a **DiT Engine Server** running separately. Start the server pointing to a [Nunchaku](https://github.com/mit-han-lab/nunchaku) SVD quant model, then connect via:
