@@ -16,7 +16,7 @@ pip install vscmnet2-1.0.0-py3-none-any.whl
 
 ### Plugins setup
 
-Download `plugins_win.zip` from the [latest release](https://github.com/dan64/vs-cmnet2/releases) and extract it into `vscmnet2/plugins/`. The resulting tree will be:
+Download `plugins_win.zip` from the [Release v1.0.0](https://github.com/dan64/vs-cmnet2/releases/download/v1.0.0/plugins_win.zip) and extract it into `vscmnet2/plugins/`. The resulting tree will be:
 
 ```
 vscmnet2/plugins/
