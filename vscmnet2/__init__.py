@@ -44,7 +44,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 import warnings
 import logging

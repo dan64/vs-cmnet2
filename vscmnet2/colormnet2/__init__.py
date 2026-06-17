@@ -183,7 +183,8 @@ def _colormnet2_client_range(colorizer: ColorMNetClient2, clip: vs.VideoNode,  f
     reader.load_from_dir(sc_framedir, target_size=(clip.width, clip.height))
     perm_mem_win = PermMemWindow(colorizer, reader, window_size=max_memory_frames)
     perm_mem_win.preload_initial_start(ref_range[0])
-    
+    ref_start_idx = reader.get_ref_idx(ref_range[0])
+
     def colormnet_range_color(n, f, perm_mem_win: PermMemWindow, reader: RefImageReader2,
                                colorizer: ColorMNetClient2 = None, ref_range: Tuple[int,int]|None = None,
                                enable_retry: bool = False, propagate: bool = False,
@@ -194,7 +195,7 @@ def _colormnet2_client_range(colorizer: ColorMNetClient2, clip: vs.VideoNode,  f
 
         img_orig = frm_to_img(f)
         if (n + frame_offset) == ref_range[0]:
-            colorizer.set_ref_frame(reader.get_ref_image(0), propagate)
+            colorizer.set_ref_frame(reader.get_ref_image(ref_start_idx), propagate)
         else:
             colorizer.set_ref_frame(None)
 
