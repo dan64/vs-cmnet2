@@ -15,6 +15,7 @@ import vapoursynth as vs
 from functools import partial
 import os
 import math
+import re
 import cv2
 from PIL import Image
 import numpy as np
@@ -141,7 +142,6 @@ def convert_format_RGB24(
 ) -> tuple[vs.VideoNode, ClipInfo]:
     """
     Convert any clip to RGB24 (8-bit full-range RGB).
-
     :param clip:           input clip (YUV/RGB/GRAY, any bit depth)
     :param chroma_resize:  if True, resize to a chroma-friendly size for CMNET2
     :param preserve_luma:  if True, keep a YUV444PS copy of the source so the
@@ -153,7 +153,6 @@ def convert_format_RGB24(
                            0.0 = use 100% CMNET2-produced luma.
     :return: (rgb24_clip, ClipInfo)
     """
-
     # Store original clip information before any processing
     original_format = clip.format
     if original_format is None:
@@ -170,7 +169,6 @@ def convert_format_RGB24(
         do_preserve_luma = False
     # Clamp blend factor
     luma_blend = max(0.0, min(1.0, float(luma_blend)))
-
     # Fast path: already RGB24, assume CMNET2_read_video produced it
     if clip.format.id == vs.RGB24:
         if vs.core.core_version.release_major < 74:
@@ -206,7 +204,6 @@ def convert_format_RGB24(
     # Read props after normalization, so ClipInfo reflects the actual values
     frame = clip.get_frame(0)
     props = frame.props
-
     if vs.core.core_version.release_major < 74:
         clip_color_range = vs.ColorRange(props.get('_ColorRange', vs.RANGE_LIMITED.value))
     else:
@@ -224,7 +221,6 @@ def convert_format_RGB24(
         preserve_luma=do_preserve_luma,
         luma_blend=luma_blend,
     )
-
     if chroma_resize:
         clip = vsresize.resize_min_HW(clip)
 
@@ -260,7 +256,6 @@ def convert_format_RGB24(
 
     # After conversion to RGB, _Matrix must be RGB (0)
     clip = clip.std.SetFrameProps(_Matrix=vs.MATRIX_RGB)
-
     # Mark output as full-range RGB
     if vs.core.core_version.release_major < 74:
         clip = clip.std.SetFrameProps(_ColorRange=vs.RANGE_FULL)
@@ -278,7 +273,6 @@ def _restore_with_luma_protect(
     """
     Convert the CMNET2 RGB24 output to YUV444PS, replace (or blend) the Y plane
     with the original high-bitdepth luma, then convert to the target format.
-
     :param clip:              CMNET2-processed clip in RGB24 full-range
     :param clip_info:         ClipInfo from convert_format_RGB24
     :param target_format_id:  desired output format; defaults to the original
@@ -297,7 +291,6 @@ def _restore_with_luma_protect(
     #    The matrix used here must match the matrix the original source carried,
     #    so the merged luma stays semantically coherent with the new chroma.
     matrix_str = _matrix_int_to_str(clip_info.matrix, default="709")
-
     # Original color range determines the YUV target range
     if clip_info.color_range is not None and clip_info.color_range == vs.RANGE_FULL:
         yuv_range_s = "full"
@@ -312,13 +305,11 @@ def _restore_with_luma_protect(
         range_s=yuv_range_s,
         dither_type="error_diffusion",
     )
-
     # 2. Extract Y from CMNET2 output and from the original high-bitdepth reference
     havc_y = vs.core.std.ShufflePlanes(havc_yuv, planes=0, colorfamily=vs.GRAY)
     orig_y = vs.core.std.ShufflePlanes(
         clip_info.clip_high_bitdepth, planes=0, colorfamily=vs.GRAY
     )
-
     # 3. Build the protected Y plane
     blend = clip_info.luma_blend
     if blend >= 1.0:
@@ -336,7 +327,6 @@ def _restore_with_luma_protect(
         planes=[0, 1, 2],
         colorfamily=vs.YUV,
     )
-
     # 5. Convert to the requested target format
     if merged.format.id == target_format_id:
         return merged
@@ -359,7 +349,6 @@ def restore_format(
     - If original was YUV, restore to original YUV format.
     - If original was RGB, restore to original RGB format.
     Assumes input 'clip' is full-range RGB24.
-
     :param clip:              clip to process (must be RGB24 full-range).
     :param clip_info:         ClipInfo struct containing original clip information.
     :param target_format_id:  optional override of the output format. If None,
@@ -381,7 +370,6 @@ def restore_format(
 
     # Standard path (8-bit round-trip)
     output_format_id = target_format_id if target_format_id is not None else clip_info.format_id
-
     # If already in target format (unlikely post-colorization), return as-is
     if clip.format.id == output_format_id:
         return clip
@@ -410,7 +398,6 @@ def restore_format(
         # If target_format_id was overridden to something compatible, honor it;
         # otherwise default to YUV420P8 (consumer-friendly colorized output).
         gray_target = output_format_id if target_format_id is not None else vs.YUV420P8
-
         restored = vs.core.resize.Bicubic(
             clip,
             format=gray_target,
@@ -451,7 +438,6 @@ def _get_render_factors(Preset: str) -> tuple[int, int, int]:
     presets = ['placebo', 'veryslow', 'slower', 'slow', 'medium', 'fast', 'faster', 'veryfast']
     preset0_rf = [36, 34, 32, 28, 24, 22, 20, 16]
     preset1_rf = [36, 34, 32, 28, 24, 22, 20, 16]
-
     pr_id = 5  # default 'fast'
     try:
         pr_id = presets.index(Preset)
@@ -466,7 +452,6 @@ def _get_mweight(VideoTune: str) -> float:
     VideoTune = VideoTune.lower()
     video_tune = ['verystable', 'morestable', 'stable', 'balanced', 'vivid', 'morevivid', 'veryvivid']
     ddcolor_weight = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
-
     w_id = 3
     try:
         w_id = video_tune.index(VideoTune)
@@ -481,7 +466,6 @@ def _get_comb_method(CombMethod: str) -> int:
     CombMethod = CombMethod.lower()
     comb_str = ['simple', 'constrained-chroma', 'luma-masked', 'adaptive-luma', 'chroma-retention', 'chromabound adaptive']
     method_id = [2, 3, 4, 5, 6, 7]
-
     w_id = 2
     try:
         w_id = comb_str.index(CombMethod)
@@ -492,10 +476,8 @@ def _get_comb_method(CombMethod: str) -> int:
 
 def _spit_color_model(ColorModel: str) -> tuple[str, str]:
     ColorModel = ColorModel.lower()
-
     deoldify = "none"
     ddcolor = "none"
-
     if '+' not in ColorModel:
         if 'deoldify' in ColorModel:
             return ColorModel, ddcolor
@@ -503,9 +485,7 @@ def _spit_color_model(ColorModel: str) -> tuple[str, str]:
             return deoldify, ColorModel
 
     cm = ColorModel.split("+")
-
     deoldify = f"deoldify({cm[0]})"
-
     if cm[1] in ('siggraph17', 'eccv16'):
         ddcolor = f"zhang({cm[1]})"
     else:
@@ -515,10 +495,8 @@ def _spit_color_model(ColorModel: str) -> tuple[str, str]:
 
 def _get_color_model(ColorModel: str) -> tuple[int, int, int]:
     ColorModel = ColorModel.lower()
-
     ddcolor_list = ["modelscope", "artistic", "siggraph17", "eccv16"]
     deoldify_list = ["video", "stable", "artistic"]
-
     if '+' in ColorModel:
         cm = ColorModel.split("+")
         do_model = deoldify_list.index(cm[0])
@@ -529,7 +507,6 @@ def _get_color_model(ColorModel: str) -> tuple[int, int, int]:
     do_model = 0  # default: Video
     dd_model = 0  # default: Modelscope
     cmodel = ""
-
     if "deoldify" in ColorModel:
         cmodel = ColorModel.replace("deoldify", "").replace("(", "").replace(")", "")
         do_model = deoldify_list.index(cmodel)
@@ -545,7 +522,6 @@ def _get_color_model(ColorModel: str) -> tuple[int, int, int]:
 
     dd_method = 1
     dd_model = ddcolor_list.index(cmodel)
-
     return do_model, dd_model, dd_method
 
 
@@ -555,22 +531,18 @@ def _get_temp_color(ColorTemp: str) -> int:
         ColorTemp = "none"
     ColorTemp = ColorTemp.lower().replace(" ", "")
     color_temp = ['none', 'veryhigh', 'high', 'medium', 'low', 'verylow']
-
     ct_id = color_temp.index(ColorTemp)
-
     return ct_id
 
 
 def _get_color_tune(ColorTune: str, ColorFix: str, ColorMap: str,
                     dd_model: int) -> tuple[list[bool], str, str, str, str]:
-
     # set defaults
     dd_tweak = [False, False, False]   # tweaks_enabled, denoise_enabled, retinex_enabled
     hue_range = ""
     hue_range2 = ""
     chroma_adjust = ""
     chroma_adjust2 = ""
-
     # Select ColorTune for ColorFix
     if ColorTune is None:
         ColorTune = "none"
@@ -585,7 +557,6 @@ def _get_color_tune(ColorTune: str, ColorFix: str, ColorMap: str,
     else:
         hue_tune = ["1.0,0.0", "0.8,0.1", "0.5,0.1", "0.2,0.1"]
     hue_tune2 = ["1.0,0.0", "0.9,0", "0.7,0", "0.5,0"]
-
     tn_id = 0
     try:
         tn_id = color_tune.index(ColorTune)
@@ -600,7 +571,6 @@ def _get_color_tune(ColorTune: str, ColorFix: str, ColorMap: str,
     color_fix = ['none', 'magenta', 'magenta/violet', 'violet', 'violet/red', 'blue/magenta', 'yellow', 'yellow/orange',
                  'yellow/green', 'retinex/red']
     hue_fix = ["none", "270:300", "250:360", "300:330", "300:360", "220:280", "60:90", "30:90", "60:120", "none"]
-
     co_id = 5
     try:
         co_id = color_fix.index(ColorFix)
@@ -663,7 +633,6 @@ def _get_color_tune(ColorTune: str, ColorFix: str, ColorMap: str,
     return dd_tweak, hue_range, hue_range2, chroma_adjust, chroma_adjust2
 
 def _get_colormap(ColorMap: str = "red->brown", ColorTune: str ="light") -> str:
-
     color_tune = ['none', 'light', 'medium', 'strong']
     tn_id = 0
     try:
@@ -690,15 +659,12 @@ def _get_colormap(ColorMap: str = "red->brown", ColorTune: str ="light") -> str:
             return ColorMap
 
     chroma_adjust = hue_map[cl_id] + "," + hue_w[tn_id]
-
     return chroma_adjust
 
 def _get_tune_id(bw_tune: str) -> int:
     BWTune = bw_tune.lower()
     bw_tune_list = ['none', 'light', 'medium', 'strong']
-
     tn_id = bw_tune_list.index(BWTune)
-
     return tn_id
 
 def _check_input(DeepExOnlyRefFrames: bool, ScFrameDir: str, DeepExMethod: int, ScThreshold: float,
@@ -721,6 +687,13 @@ def _check_input(DeepExOnlyRefFrames: bool, ScFrameDir: str, DeepExMethod: int, 
         CMNET2_LogMessage(MessageType.EXCEPTION,
                         "CMNET2_main: RefMerge cannot be used with DeepExMethod in (2, 6)")
 
+def get_ref_number(filename) -> int | None:
+    if filename is None:
+        return None
+    match = re.search(r'ref_(\d+)', filename)
+    if match:
+        return int(match.group(1))
+    return None
 
 # ------------------------------------------------------------
 # collection of small helper functions to validate parameters
@@ -744,7 +717,6 @@ def is_limited_range(clip: vs.VideoNode) -> bool:
 def _matrixIsInvalid(clip: vs.VideoNode) -> bool:
     frame = clip.get_frame(0)
     value = frame.props.get('_Matrix', None)
-
     # Non specificato o riservato
     if value in (None, 2, 3):
         return True
@@ -792,7 +764,6 @@ def adjust_rgb(clip: vs.VideoNode, factor: list = (1.0, 1.0, 1.0), bias: list = 
                gamma: list = (1.0, 1.0, 1.0)) -> vs.VideoNode:
     """Utility function to change the color and luminance of RGB clip.
        Gain, bias (offset) and gamma can be set independently on each channel.
-
        :param clip:         Clip to process. Only RGB24 format is supported.
        :param factor:       List of Red, green and blue scaling factor, in the list format: (r, g, b).
                             Range 0.0 to 255.0, default = (1, 1, 1).
@@ -806,24 +777,19 @@ def adjust_rgb(clip: vs.VideoNode, factor: list = (1.0, 1.0, 1.0), bias: list = 
                             pixel values and gg=0.8 will darken the green pixel values.
     """
     funcName = 'CMNET2_adjust_rgb'
-
     rgb = clip
-
     # unpack rgb_factor
     r = factor[0]
     g = factor[1]
     b = factor[2]
-
     # unpack rgb_bias
     rb = bias[0]
     gb = bias[1]
     bb = bias[2]
-
     # unpack rgb_gamma
     rg = gamma[0]
     gg = gamma[1]
     bg = gamma[2]
-
     if rgb.format.color_family != vs.RGB:
         raise ValueError(funcName + ': input clip needs to be RGB!')
 
@@ -868,7 +834,6 @@ def adjust_rgb(clip: vs.VideoNode, factor: list = (1.0, 1.0, 1.0), bias: list = 
 
     # x*r + rb , x*g + gb , x*b + bb
     rgb_adjusted = vs.core.std.Expr(rgb, [f"x {r} * {rb} +", f"x {g} * {gb} +", f"x {b} * {bb} +"])
-
     # gamma per channel
     planes = [vs.core.std.ShufflePlanes(rgb_adjusted, planes=p, colorfamily=vs.GRAY) for p in [0, 1, 2]]
     planes = [vs.core.std.Levels(planes[p], gamma=g) if not g == 1 else planes[p] for p, g in enumerate([rg, gg, bg])]
@@ -878,23 +843,17 @@ def adjust_rgb(clip: vs.VideoNode, factor: list = (1.0, 1.0, 1.0), bias: list = 
 
 def rgb_denoise(clip: vs.VideoNode, denoise_levels: list[float] = (0.3, 0.2),
                  rgb_factors: list[float] = (0.98, 1.02, 1.0)) -> vs.VideoNode:
-
     w_strength = denoise_levels[0]
     b_strength = denoise_levels[1]
-
     r = rgb_factors[0]
     g = rgb_factors[1]
     b = rgb_factors[2]
-
     clip = clip.std.Levels(min_in=0, max_in=255, min_out=16, max_out=235)
     clip = clip.resize.Bicubic(format=vs.RGB24, matrix_in_s="709", range_in_s="full", range_s="limited")
-
     # step #1 : rgb colors are normalized and changed using rgb factors (this will change also the contrast/luminosity)
     clip = rgb_balance(clip=clip, strength=w_strength, rgb_factor=[r, g, b])
-
     clip = clip.std.Levels(min_in=16, max_in=235, min_out=0, max_out=255)
     clip = clip.resize.Bicubic(format=vs.RGB24, matrix_in_s="709", range_in_s="limited", range_s="full")
-
     return clip
 
 

@@ -32,9 +32,7 @@ def load_TCanny_plugin() -> bool:
     Ensures TCanny VapourSynth plugin is loaded.
     URL: https://github.com/HomeOfVapourSynthEvolution/VapourSynth-TCanny
     """
-
     plugin_path = os.path.normpath(os.path.join(support_dir, "TCanny.dll"))
-
     try:
         if hasattr(vs.core, 'tcanny') and hasattr(vs.core.akarin, 'TCanny'):
             if DEF_DEBUG_LEVEL > DEF_LEVEL_NONE:
@@ -54,9 +52,7 @@ def load_Akarin_plugin() -> bool:
     Ensures Akarin VapourSynth plugin is loaded.
     URL: https://github.com/AkarinVS/vapoursynth-plugin
     """
-
     plugin_path = os.path.normpath(os.path.join(support_dir, "akarin.dll"))
-
     try:
         if hasattr(vs.core, 'akarin') and hasattr(vs.core.akarin, 'Expr'):
             if DEF_DEBUG_LEVEL > DEF_LEVEL_NONE:
@@ -77,9 +73,7 @@ def load_SCDetect_plugin() -> bool:
     Ensures SCDetect VapourSynth plugin is loaded.
     URL: https://github.com/vapoursynth/vs-miscfilters-obsolete
     """
-
     plugin_path = os.path.normpath(os.path.join(MiscFilter_dir, "MiscFilters.dll"))
-
     try:
         if hasattr(vs.core, 'misc') and hasattr(vs.core.misc, 'SCDetect'):
             if DEF_DEBUG_LEVEL > DEF_LEVEL_NONE:
@@ -99,9 +93,7 @@ def load_LSMASHSource_plugin() -> bool:
     Ensures LSMASHSource VapourSynth plugin is loaded.
     URL: https://github.com/AkarinVS/L-SMASH-Works
     """
-
     plugin_path = os.path.normpath(os.path.join(LSMASHSource_dir, "LSMASHSource.dll"))
-
     try:
         if hasattr(vs.core, 'lsmas') and hasattr(vs.core.lsmas, 'LWLibavSource'):
             if DEF_DEBUG_LEVEL > DEF_LEVEL_NONE:

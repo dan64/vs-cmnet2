@@ -39,7 +39,6 @@ class RefImageReader2:
     source_mode: str = "vs"  # "vs" (default) or "dir"
     ref_img_list: list[str] = None  # only used when source_mode == "dir"
     target_size: tuple[int, int] = None  # (W, H) to resize disk-loaded refs; None = no resize
-
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -76,7 +75,6 @@ class RefImageReader2:
         self.clip_buffer_size = min(self.clip_total_frames - start_frame, DEF_MAX_XREF_BUFFER)
         req_size = window_size if window_size is not None else self.ref_req_list_size
         self.ref_req_list_size = min(self.clip_total_frames - start_frame, req_size)
-
         for i in range(0, self.clip_buffer_size):
             frame = clip_sc.get_frame(i)
             if frame.props['_SceneChangePrev'] == 1:
@@ -109,7 +107,6 @@ class RefImageReader2:
         Loads reference frames directly from a filesystem directory.
         Filenames must follow the pattern ref_nnnnnn.[jpg|png] where nnnnnn
         is the frame number in the video. Bypasses VS pipeline re-evaluation.
-
         target_size: (W, H) to resize each ref when read. If None, refs are
         loaded at their native size (caller is responsible for consistency
         with the B&W clip being colorized).
@@ -123,6 +120,13 @@ class RefImageReader2:
                             "RefImageReader2.load_from_dir(): at least 1 reference frames required, found: ",
                             self.num_ref_imgs)
         return self.num_ref_imgs
+
+    def get_ref_idx(self, ref_number: int):
+        for i in range(0, self.num_ref_imgs):
+            ref_n = self.ref_num_list[i]
+            if ref_n >= ref_number:
+                return i
+        return 0  # fallback
 
     def get_ref_image(self, idx: int) -> Image:
         """Pure accessor — returns the reference image at position idx without modifying any state."""
@@ -146,7 +150,6 @@ class RefImageReader2:
 
 class PermMemWindow:
     """Orchestrates the sliding permanent-memory window for CMNET2."""
-
     def __init__(self, colorizer, reader: RefImageReader2, window_size: int):
         self.colorizer = colorizer
         self.reader = reader
@@ -161,6 +164,17 @@ class PermMemWindow:
         for i in range(self.window_size):
             self.colorizer.preload_reference(self.reader.get_ref_image(i))
         self.next_ref_idx = self.window_size
+        self.activation_frame = self.reader.ref_num_list[self.ref_half_idx]
+
+    def preload_initial_start(self, ref_start: int):
+        """
+           Load the first window_size reference images into permanent memory before the colorization loop.
+           The loading start from ref_start
+        """
+        idx = self.reader.get_ref_idx(ref_start)
+        for i in range(self.window_size-idx):
+            self.colorizer.preload_reference(self.reader.get_ref_image(idx+i))
+        self.next_ref_idx = idx + self.window_size
         self.activation_frame = self.reader.ref_num_list[self.ref_half_idx]
 
     def adjust(self, frame_n: int):
@@ -181,14 +195,12 @@ class PermMemWindow:
 class PermMemWindowDit:
     """
     Sliding permanent-memory window for CMNET2-DIT colorization.
-
     Identical role to PermMemWindow, but designed for B&W reference frames:
     each reference frame is colorized by CMNET2ditEngine *before* being loaded
     into perm_mem.  Colorization always runs in pairs (colorize_image_pair())
     because the DiT model processes two frames in a single forward pass,
     roughly halving the per-image cost.  When only one reference frame remains
     (end-of-clip edge case), colorize_image() is used instead.
-
     Key differences from PermMemWindow
     ------------------------------------
     - window_size is always rounded down to the nearest even number (≥ 2).
@@ -200,7 +212,6 @@ class PermMemWindowDit:
       ModifyFrame callback can call set_ref_frame() on frame n=0 without
       incurring a second colorization call.
     """
-
     def __init__(self, colorizer, reader: RefImageReader2, window_size: int, dit_engine):
         """
         Parameters
@@ -219,7 +230,6 @@ class PermMemWindowDit:
         self.colorizer  = colorizer
         self.reader     = reader
         self.dit_engine = dit_engine
-
         # Force window_size to be even, then cap at the number of available refs.
         ws_even = math.trunc(window_size / 2) * 2
         self.window_size = min(ws_even, math.trunc(reader.num_ref_imgs / 2) * 2)
@@ -245,7 +255,6 @@ class PermMemWindowDit:
         """
         Colorize and load the first window_size B&W reference frames (in pairs)
         into perm_mem before the colorization loop starts.
-
         Since window_size is guaranteed even, the range always produces complete
         pairs with no residue.
         """
@@ -273,7 +282,6 @@ class PermMemWindowDit:
         """
         Slide the permanent-memory window forward by 2 when frame_n passes
         activation_frame.
-
         On each activation:
           1. Remove the 2 oldest reference frames from perm_mem.
           2a. If at least 2 new references remain: colorize them as a pair
@@ -306,7 +314,6 @@ class PermMemWindowDit:
 
         # --- Slide 2 frames out of perm_mem ---
         self.colorizer.slide_permanent_memory(2)
-
         # --- Load next pair or single frame ---
         has_pair = self.reader.extend_if_needed(self.next_ref_idx + 1)
         if has_pair:
@@ -364,14 +371,12 @@ def lab2rgb_transform_PIL(mask):
     mask_d = detach_to_cpu(mask)
     mask_d = inv_lll2rgb_trans(mask_d)
     im = tensor_to_np_float(mask_d)
-
     if len(im.shape) == 3:
         im = im.transpose((1, 2, 0))
     else:
         im = im[:, :, None]
 
     im = color.lab2rgb(im)
-
     return im.clip(0, 1)
 
 def get_ref_list(img_dir="./") -> tuple[list, list]:
@@ -383,7 +388,6 @@ def get_ref_list(img_dir="./") -> tuple[list, list]:
 
 def is_img_file(dir="./", fname: str = "") -> bool:
     filename = os.path.join(dir, fname)
-
     if not os.path.isfile(filename):
         return False
 
@@ -392,16 +396,12 @@ def is_img_file(dir="./", fname: str = "") -> bool:
 def img_weighted_merge(img1: Image, img2: Image, weight: float = 0.5) -> Image:
     img1_np = np.asarray(img1)
     img2_np = np.asarray(img2)
-
     img_new = np.copy(img1_np)
-
     img_m = np.multiply(img1_np, 1 - weight) + np.multiply(img2_np, weight)
     img_m = np.uint8(np.clip(img_m, 0, 255))
-
     img_new[:, :, 0] = img_m[:, :, 0]
     img_new[:, :, 1] = img_m[:, :, 1]
     img_new[:, :, 2] = img_m[:, :, 2]
-
     return Image.fromarray(img_new)
 
 

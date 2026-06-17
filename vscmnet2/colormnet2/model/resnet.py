@@ -20,12 +20,10 @@ from einops import rearrange
 
 def load_weights_add_extra_dim(target, source_state, extra_dim=1):
     new_dict = OrderedDict()
-
     for k1, v1 in target.state_dict().items():
         if not 'num_batches_tracked' in k1:
             if k1 in source_state:
                 tar_v = source_state[k1]
-
                 if v1.shape != tar_v.shape:
                     # Init the new segmentation channel with zeros
                     # print(v1.shape, tar_v.shape)
@@ -52,7 +50,6 @@ def conv3x3(in_planes, out_planes, stride=1, dilation=1):
 
 class BasicBlock(nn.Module):
     expansion = 1
-
     def __init__(self, inplanes, planes, stride=1, downsample=None, dilation=1):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride=stride, dilation=dilation)
@@ -65,26 +62,21 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         residual = x
-
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
-
         out = self.conv2(out)
         out = self.bn2(out)
-
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out += residual
         out = self.relu(out)
-
         return out
 
 
 class Bottleneck(nn.Module):
     expansion = 4
-
     def __init__(self, inplanes, planes, stride=1, downsample=None, dilation=1):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
@@ -100,24 +92,19 @@ class Bottleneck(nn.Module):
 
     def forward(self, x):
         residual = x
-
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
-
         out = self.conv2(out)
         out = self.bn2(out)
         out = self.relu(out)
-
         out = self.conv3(out)
         out = self.bn3(out)
-
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out += residual
         out = self.relu(out)
-
         return out
 
 
@@ -133,7 +120,6 @@ class ResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -218,13 +204,11 @@ class Segmentor(nn.Module):
         self.backbones = dino_backbones
         self.backbone = load('facebookresearch/dinov2', self.backbones[backbone]['name'], verbose=False) # add trust_repo to
         self.backbone.eval()
-
         # # local 
         # self.backbones = dino_backbones
         # self.backbone = load('/root/.cache/torch/hub/facebookresearch_dinov2_main', self.backbones[backbone]['name'], source='local', pretrained=False) # add trust_repo to
         # self.backbone.load_state_dict(torch.load('/root/.cache/torch/hub/checkpoints/dinov2_vits14_pretrain.pth'))
         # self.backbone.eval()
-
         self.conv3 = nn.Conv2d(1536, 1536, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(1536)
         self.relu = nn.ReLU(inplace=True)
@@ -232,13 +216,10 @@ class Segmentor(nn.Module):
     def forward(self, x):
         with torch.no_grad():
             tokens = self.backbone.get_intermediate_layers(x, n=[8, 9, 10, 11], reshape=True) # last n=4 [8, 9, 10, 11]
-
             f16 = torch.cat(tokens, dim=1)
-
             f16 = self.conv3(f16)
             f16 = self.bn3(f16)
             f16 = self.relu(f16)
-
             old_size = (f16.shape[2], f16.shape[3])
             new_size = (int(old_size[0]*14/16), int(old_size[1]*14/16))
             f16 = F.interpolate(f16, size=new_size, mode='bilinear', align_corners=False) # scale_factor=3.5
@@ -246,7 +227,6 @@ class Segmentor(nn.Module):
         return f16
 
 class LayerNormFunction(torch.autograd.Function):
-
     @staticmethod
     def forward(ctx, x, weight, bias, eps):
         ctx.eps = eps
@@ -261,19 +241,16 @@ class LayerNormFunction(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         eps = ctx.eps
-
         N, C, H, W = grad_output.size()
         y, var, weight = ctx.saved_variables
         g = grad_output * weight.view(1, C, 1, 1)
         mean_g = g.mean(dim=1, keepdim=True)
-
         mean_gy = (g * y).mean(dim=1, keepdim=True)
         gx = 1. / torch.sqrt(var + eps) * (g - y * mean_gy - mean_g)
         return gx, (grad_output * y).sum(dim=3).sum(dim=2).sum(dim=0), grad_output.sum(dim=3).sum(dim=2).sum(
             dim=0), None
     
 class LayerNorm2d(nn.Module):
-
     def __init__(self, channels, eps=1e-6):
         super(LayerNorm2d, self).__init__()
         self.register_parameter('weight', nn.Parameter(torch.ones(channels)))
@@ -286,20 +263,14 @@ class LayerNorm2d(nn.Module):
 class CrossChannelAttention(nn.Module):
     def __init__(self, dim, heads=8):
         super().__init__()
-
         self.temperature = nn.Parameter(torch.ones(heads, 1, 1))
-
         self.heads = heads
-
         self.to_q = nn.Conv2d(dim, dim * 2, kernel_size=1, bias=True)
         self.to_q_dw = nn.Conv2d(dim * 2, dim * 2, kernel_size=3, stride=1, padding=1, groups=dim * 2, bias=True)
-
         self.to_k = nn.Conv2d(dim, dim * 2, kernel_size=1, bias=True)
         self.to_k_dw = nn.Conv2d(dim * 2, dim * 2, kernel_size=3, stride=1, padding=1, groups=dim * 2, bias=True)
-
         self.to_v = nn.Conv2d(dim, dim * 2, kernel_size=1, bias=True)
         self.to_v_dw = nn.Conv2d(dim * 2, dim * 2, kernel_size=3, stride=1, padding=1, groups=dim * 2, bias=True)
-
         self.to_out = nn.Sequential(
             nn.Conv2d(dim*2, dim,1,1,0),
         )
@@ -307,26 +278,18 @@ class CrossChannelAttention(nn.Module):
     def forward(self, encoder, decoder):
         # h = self.heads
         b, c, h, w = encoder.shape
-
         q = self.to_q_dw(self.to_q(encoder))
-
         k = self.to_k_dw(self.to_k(decoder))
         v = self.to_v_dw(self.to_v(decoder))
-
         q = rearrange(q, 'b (head c) h w -> b head c (h w)', head=self.heads)
         k = rearrange(k, 'b (head c) h w -> b head c (h w)', head=self.heads)
         v = rearrange(v, 'b (head c) h w -> b head c (h w)', head=self.heads)
-
         q = torch.nn.functional.normalize(q, dim=-1)
         k = torch.nn.functional.normalize(k, dim=-1)
-
         attn = (q @ k.transpose(-2, -1)) * self.temperature
         attn = attn.softmax(dim=-1)
-
         out = (attn @ v)
-
         out = rearrange(out, 'b head c (h w) -> b (head c) h w', head=self.heads, h=h, w=w)
-
         return self.to_out(out)
 
 def normalize(in_channels):
@@ -351,16 +314,12 @@ class ResBlock(nn.Module):
     def forward(self, x_in):
         x = x_in
         x = self.norm1(x)
-        
         x = swish(x)
         # x = x * torch.sigmoid(x)
-
         x = self.conv1(x)
         x = self.norm2(x)
-
         x = swish(x)
         # x = x * torch.sigmoid(x)
-
         x = self.conv2(x)
         if self.in_channels != self.out_channels:
             x_in = self.conv_out(x_in)
@@ -371,29 +330,22 @@ class Fuse(nn.Module):
     def __init__(self, dine_feat, out_feat):
         # need to key same channel and HW for enc / dnc
         super(Fuse, self).__init__()
-
         self.encode_enc = nn.Conv2d(dine_feat, out_feat, kernel_size=3, stride=1, padding=1)
-
         self.dim = out_feat
         self.norm1 = LayerNorm2d(self.dim)
         self.norm2 = LayerNorm2d(self.dim)
-
         self.dine_feat = dine_feat
         self.out_feat = out_feat
         self.crossattn = CrossChannelAttention(dim=out_feat)
-
         self.norm3 = LayerNorm2d(self.dim)
         self.relu3 = nn.ReLU(inplace=True)
 
     def forward(self, enc, dnc):
         enc = self.encode_enc(enc)
-
         res = enc
         enc = self.norm1(enc)
         dnc = self.norm2(dnc)
         output = self.crossattn(enc, dnc) + res
-
         output = self.norm3(output)
         output = self.relu3(output)
-
         return output

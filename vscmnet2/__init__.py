@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import os
 
+from vscmnet2.colormnet2 import vs_colormnet2_remote
+from vscmnet2.vsslib.constants import DEF_XRF_WINDOW_SIZE
+
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 os.environ["NUMEXPR_MAX_THREADS"] = "8"
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -25,7 +28,7 @@ import pathlib
 import math
 
 
-from .cmnet2_utils import convert_format_RGB24, restore_format, VIDEO_EXTENSIONS
+from .cmnet2_utils import convert_format_RGB24, restore_format, VIDEO_EXTENSIONS, get_ref_number
 from .vsslib.mcomb import vs_combine_models, vs_ext_reference_clip
 from .vsslib.vsfilters import vs_simple_merge, vs_sc_colormap, vs_sc_dark_tweak
 from .vsslib.vsfilters import  vs_sc_chroma_bright_tweak, vs_recover_clip_luma
@@ -37,10 +40,11 @@ from .vsslib.vsresize import get_render_size
 from .vsslib.vsscdect import SceneDetectFromDir, SceneDetect, CopySCDetect
 from .vsslib.vsscdect import get_sc_props
 from .vsslib.vsscdetect_edge import SceneDetectEdges
+from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import warnings
 import logging
@@ -77,7 +81,6 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
               encode_mode: int = 0, max_memory_frames: int = 0, ref_mode: int = 1, retry_threshold: float = 0.0,
               retry_model: int = 1, torch_dir: str = model_dir) -> vs.VideoNode:
     """CMNET2 colorization filter
-
     :param clip:                Clip to process, any clip format is supported
     :param clip_ref:            Clip containing the reference frames (necessary if method=0,1,2,5,6)
     :param method:              Method to use to generate reference frames (RF).
@@ -156,15 +159,12 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
     """
     # disable packages warnings
     disable_warnings()
-
     # static variables
     only_ref_frames: bool = False
-
     if not torch.cuda.is_available():
         CMNET2_LogMessage(MessageType.EXCEPTION, "vs_cmnet2: CUDA is not available")
 
     clip, orig_fmt = convert_format_RGB24(clip)
-
     if clip_ref is not None:
         clip_ref, orig_fmt_r = convert_format_RGB24(clip_ref)
 
@@ -179,7 +179,6 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
 
     # static params
     enable_resize = False
-
     # unpack dark
     dark_enabled = dark
     dark_threshold = dark_p[0]
@@ -203,10 +202,8 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
     # define colormap
     colormap = colormap.lower()
     colormap_enabled = (colormap != "none" and colormap != "")
-
     ref_weight = 1.0
     clip_sc = None
-
     if method != 0 and not (sc_framedir is None):
         ref_frame_ext = method in (2, 4)
         merge_ref_frame = method in (1, 2)
@@ -216,7 +213,6 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
         clip = CopySCDetect(clip, clip_ref)
 
     clip_orig = clip
-
     # when reference frames exist on disk, read them directly (bypasses VS pipeline
     # re-evaluation per reference — significant speedup on preload/slide).
     # The clip_ref VS path is still used for the merge at runtime (1 get_frame per
@@ -240,7 +236,6 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
     d_size = get_render_size(clip.width, clip.height, render_speed=render_speed.lower())
     clip = clip.resize.Spline36(width=d_size[0], height=d_size[1])
     clip_ref = clip_ref.resize.Spline36(width=d_size[0], height=d_size[1])
-
     # when reference frames are loaded directly from disk, filters on clip_ref
     # (colormap, dark, smooth) are redundant: perm_mem refs bypass them entirely,
     # and applying them only to the runtime merge clip creates an inconsistency
@@ -267,7 +262,6 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
                                              dark_sat=dark_sat, dark_bright=dark_bright,
                                              chroma_adjust=chroma_adjust.lower())
     ref_same_as_video = False
-
     clip_colored = vs_colormnet2(clip, clip_ref, clip_sc, image_size=-1, enable_resize=enable_resize,
                                             encode_mode=encode_mode, max_memory_frames=max_memory_frames,
                                             frame_propagate=ref_same_as_video, render_vivid=render_vivid,
@@ -275,12 +269,107 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
                                             retry_perm_share_threshold=retry_threshold, retry_model=retry_model)
 
     clip_resized = clip_colored.resize.Spline36(width=clip_orig.width, height=clip_orig.height)
-
     # restore original resolution details, 5% faster than ShufflePlanes()
     clip_new = vs_recover_clip_luma(clip_orig, clip_resized)
-
     return restore_format(clip_new, orig_fmt)
-    
+
+
+def vs_cmnet2_recolor(clip: vs.VideoNode = None, method: int = 4, render_speed: str = 'auto',
+                      render_vivid: bool = False, ref_framedir: str = None, ref_start_path: str = None,
+                      ref_end_path: str = None, max_memory_frames: int = 0, retry_threshold: float = 0.0,
+                      retry_model: int = 1, torch_dir: str = model_dir) -> vs.VideoNode:
+    """CMNET2 colorization filter with colorization limited by a range of reference frames
+    :param clip:                Colorized clip to process, any clip format is supported
+    :param method:              Method to use to generate reference frames (RF).
+                                        3 = external RF same as video
+                                        4 = external RF different from video
+    :param render_speed:        Preset to control the render method and speed:
+                                Allowed values are:
+                                        'Auto'   : will be automatically assigned the optimal render size (default)
+                                        'Fast'   : colors are more washed out
+                                        'Medium' : colors are a little washed out
+                                        'Slow'   : colors are a little more vivid
+                                        'Slower' : colors are more accurate (usually is very slow)
+    :param render_vivid:        If True, the saturation will be increased by about 15%. Default: False
+    :param ref_framedir:         Define the directory where are stored the colorized reference frames.
+                                The reference frame name must be in the format: ref_nnnnnn.[jpg|png],
+                                for example the reference frame 897 must be named: ref_000897.png.
+                                NOTE: The reference frames are read directly from this directory.
+    :param max_memory_frames:   Window size for the sliding permanent-memory of ColorMNet2.
+                                Defines how many reference frames are held in the model's permanent memory at any
+                                given time. Must be an even number and must not exceed the number of available
+                                reference frames. The window slides forward automatically as colorization advances.
+                                Suggested values: min=10, max=500.
+                                If = 0 (default) will be set to DEF_XRF_WINDOW_SIZE (20).
+    :param ref_start_path:      Path to the first frame to be used for the clip re-colorization. Must be in the format
+                                ref_nnnnnn.[jpg|png] and need to be stored in the same path defined in ref_framedir.
+    :param ref_end_path:        Path to the last frame to be used for the clip re-colorization. Must be in the format
+                                ref_nnnnnn.[jpg|png] and need to be stored in the same path defined in ref_framedir.
+    :param retry_threshold:     Threshold used to identify frames that may benefit from an additional
+                                reference frame. Range [0.0, 1.0], default 0.0 (disabled).
+                                High values (> 0.3) trigger more retry, while lower values (< 0.3) trigger less retry.
+                                Suggested value in the range: 0.20-0.35.
+    :param retry_model:         If retry_threshold > 0 it represents the model used to colorize the missing
+                                reference frames. Allowed values, are:
+                                     1 : Model DiT colorization with model_precision = "fp4" (RTX 50-Series)
+                                     2 : Model DiT colorization with model_precision = "int4" (RTX 30/40-Series)
+                                For the models 1 and 2 is necessary to run the DiT Server as explained in the docstring
+                                of vs_cmnet2dit(). In the case the DiT Server is not running will be used the model 0
+                                (Model CMNET2). Range [0, 1, 2], default = 0
+    :param torch_dir:           torch hub dir location, default is model directory, if set to None will switch
+                                to torch cache dir
+    """
+    # disable packages warnings
+    disable_warnings()
+    if not torch.cuda.is_available():
+        CMNET2_LogMessage(MessageType.EXCEPTION, "vs_cmnet2_recolor: CUDA is not available")
+
+    clip, orig_fmt = convert_format_RGB24(clip)
+    if method not in (3, 4):
+        CMNET2_LogMessage(MessageType.EXCEPTION, "vs_cmnet2_recolor: method must be in range [3-4]")
+
+    if ref_framedir is None:
+        CMNET2_LogMessage(MessageType.EXCEPTION, "vs_cmnet2_recolor: 'ref_framedir' must be provided")
+
+    ref_start = get_ref_number(ref_start_path)
+    if ref_start is None:
+        CMNET2_LogMessage(MessageType.EXCEPTION, f"vs_cmnet2_recolor: failed to get ref number form {ref_start_path}")
+
+    ref_end = get_ref_number(ref_end_path)
+    if ref_end is None:
+        CMNET2_LogMessage(MessageType.EXCEPTION, f"vs_cmnet2_recolor: failed to get ref number form {ref_end_path}")
+
+    if ref_end <= ref_start:
+        CMNET2_LogMessage(MessageType.EXCEPTION, f"vs_cmnet2_recolor: {ref_end_path} must be greater than {ref_start_path}")
+
+    if torch_dir is not None:
+        torch.hub.set_dir(torch_dir)
+
+    ref_range = (ref_start, ref_end)
+    ref_frame_ext = (method == 4)
+    merge_ref_frame = False
+    clip = SceneDetectFromDir(clip, sc_framedir=ref_framedir, merge_ref_frame=merge_ref_frame,
+                                  ref_frame_ext=ref_frame_ext)
+
+    clip_orig = clip
+    clip_ref = vs_ext_reference_clip(clip, sc_framedir=ref_framedir)
+    d_size = get_render_size(clip.width, clip.height, render_speed=render_speed.lower())
+    clip = clip.resize.Spline36(width=d_size[0], height=d_size[1])
+    clip_ref = clip_ref.resize.Spline36(width=d_size[0], height=d_size[1])
+    ref_same_as_video = (method == 3)
+    if max_memory_frames is None or max_memory_frames == 0:
+        max_memory_frames = DEF_XRF_WINDOW_SIZE
+    max_memory_frames = max(2, math.trunc(max_memory_frames / 2) * 2)
+    clip_colored = vs_colormnet2_range(clip, clip_ref, frame_propagate=ref_same_as_video, render_vivid=render_vivid,
+                                 max_memory_frames=max_memory_frames, sc_framedir=ref_framedir, ref_range=ref_range,
+                                 retry_perm_share_threshold=retry_threshold, retry_model=retry_model)
+
+
+    clip_resized = clip_colored.resize.Spline36(width=clip_orig.width, height=clip_orig.height)
+    # restore original resolution details, 5% faster than ShufflePlanes()
+    clip_new = vs_recover_clip_luma(clip_orig, clip_resized)
+    return restore_format(clip_new, orig_fmt)
+
 
 def vs_cmnet2dit(clip: vs.VideoNode = None,
                    render_speed: str = 'auto',
@@ -296,18 +385,15 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
                    retry_model: int = 1,
                    torch_dir: str = model_dir) -> vs.VideoNode:
     """CMNET2-DIT colorization filter.
-
     Like HAVC_cmnet2() but designed for B&W reference frames: scene-change
     frames extracted from the input clip are colorized by a DiT-based model
     (DiT Engine, accessed via RPC) *before* being loaded into CMNET2
     permanent memory.  This makes HAVC_cmnet2dit() self-contained, no
     eparate pre-colored reference clip is needed.
-
     The DiT colorization of reference frames always runs in pairs
     (colorize_image_pair()) to exploit the DiT model's batched forward pass.
     A single colorize_image() call handles any odd leftover reference frame at
     the end of the clip.
-
     :param clip:                B&W source clip; any format is accepted and
                                 converted internally to RGB24.
     :param render_speed:        Preset controlling CMNET2 render resolution.
@@ -363,14 +449,11 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
                                 Pass None to use the Torch cache directory.
     :return:                    Colorized clip in the same format as the input.
     """
-
     disable_warnings()
-
     if not torch.cuda.is_available():
         CMNET2_LogMessage(MessageType.EXCEPTION, "vs_cmnet2dit: CUDA is not available")
 
     clip, orig_fmt = convert_format_RGB24(clip)
-
     if torch_dir is not None:
         torch.hub.set_dir(torch_dir)
 
@@ -385,7 +468,6 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
 
     # forced encode_mode=0 due to memory limitation
     encode_mode = 0
-
     # Run scene detection on the (resized-later, but prop-only here) clip to
     # obtain _SceneChangePrev props.  clip_ref == clip internally: the B&W
     # input clip is both the content to colorize and the source of reference
@@ -396,22 +478,17 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
     # Copy scene-change props to the working clip so that downstream VS filters
     # (e.g. vs_recover_clip_luma) can access them if needed.
     clip = CopySCDetect(clip, clip_ref)
-
     clip_orig = clip
-
     # No ref-merge in the DIT path.
     ref_same_as_video = False
     clip_sc = None
-
     # -----------------------------------------------------------------------
     # Resize to model inference resolution
     # -----------------------------------------------------------------------
     enable_resize = False   # static: consistent with HAVC_cmnet2 default
-
     d_size = get_render_size(clip.width, clip.height, render_speed=render_speed.lower())
     clip = clip.resize.Spline36(width=d_size[0], height=d_size[1])
     clip_ref = clip_ref.resize.Spline36(width=d_size[0], height=d_size[1])
-
     # -----------------------------------------------------------------------
     # CMNET2-DIT colorization
     # -----------------------------------------------------------------------
@@ -427,16 +504,13 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
         retry_perm_share_threshold=retry_threshold,
         retry_model=retry_model,
     )
-
     # -----------------------------------------------------------------------
     # Restore original resolution and format
     # -----------------------------------------------------------------------
     clip_resized = clip_colored.resize.Spline36(width=clip_orig.width, height=clip_orig.height)
-
     # Graft the original luma back onto the coloured chroma for sharpness
     # (~5% faster than ShufflePlanes).
     clip_new = vs_recover_clip_luma(clip_orig, clip_resized)
-
     return restore_format(clip_new, orig_fmt)
 
 
@@ -454,7 +528,6 @@ def vs_merge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, clip_luma: 
                method: int = 2, cmc_p: list = constants.DEF_CMC_p, lmm_p: list = constants.DEF_LMM_p, alm_p: list = constants.DEF_ALM_p,
                crt_p: list = constants.DEF_CRT_p) -> vs.VideoNode:
     """Utility function with the implementation of CMNET2 merge methods
-
     :param clipa:               first clip to merge, any format is supported
     :param clipb:               second clip to merge, any format is supported
     :param clip_luma:           if specified, clip_luma will be used as source of luma component for the merge. It is an
@@ -541,7 +614,6 @@ def vs_merge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, clip_luma: 
     """
     # disable packages warnings
     disable_warnings()
-
     if clipa is not None and not isinstance(clipa, vs.VideoNode):
         CMNET2_LogMessage(MessageType.EXCEPTION, "CMNET2_merge: this is not a clip: clipa")
 
@@ -566,10 +638,8 @@ def vs_merge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, clip_luma: 
         return clipb
 
     merge_weight = weight
-
     clip_a, orig_fmt_a = convert_format_RGB24(clipa)
     clip_b, orig_fmt_b = convert_format_RGB24(clipb)
-
     if method == 2:
         clip_merged = vs_simple_merge(clip_a, clip_b, merge_weight)
         return restore_format(clip_merged, orig_fmt_a)
@@ -597,7 +667,6 @@ def vs_SceneDetect(clip: vs.VideoNode, sc_threshold: float = constants.DEF_THRES
                      sc_tht_white: float = constants.DEF_THT_WHITE, sc_tht_black: float = constants.DEF_THT_BLACK,
                      sc_debug: bool = False) -> vs.VideoNode:
     """Utility function to set the scene-change frames in the clip
-
     :param clip:                clip to process, any format is supported.
     :param sc_threshold:        Scene change threshold used to generate the reference frames.
                                 It is a percentage of the luma change between the previous n-frame (n=sc_tht_offset)
@@ -617,10 +686,8 @@ def vs_SceneDetect(clip: vs.VideoNode, sc_threshold: float = constants.DEF_THRES
     :param sc_min_freq:         if > 0 will be generated at least a reference frame every "sc_min_freq" frames.
                                 range [0-1500], default: 0.
     :param sc_debug:            Enable SC debug messages. default: False
-
     """
     clip, orig_fmt = convert_format_RGB24(clip)
-
     clip = SceneDetect(clip, threshold=sc_threshold, tht_offset=sc_tht_offset, frequency=sc_min_freq,
                        sc_tht_filter=sc_tht_ssim, min_length=sc_min_int, tht_white=sc_tht_white,
                        tht_black=sc_tht_black, frame_norm=sc_normalize, sc_debug=sc_debug)
@@ -633,7 +700,6 @@ def vs_SceneDetectEdges(clip: vs.VideoNode, sc_threshold: float = 0.035, sc_tht_
                      sc_tht_white: float = 0.70, sc_tht_black: float = 0.10,
                      sc_debug: bool = False) -> vs.VideoNode:
     """Utility function to set the scene-change frames in the clip
-
     :param clip:                clip to process, any format is supported.
     :param sc_threshold:        Scene change threshold used to generate the reference frames.
                                 It is a percentage of the luma change between the previous n-frame edges
@@ -651,10 +717,8 @@ def vs_SceneDetectEdges(clip: vs.VideoNode, sc_threshold: float = 0.035, sc_tht_
     :param sc_mult_tht:         Threshold multiplier used to identify significant scene change, range[5, 25],
                                 default = 15
     :param sc_debug:            Enable SC debug messages. default: False
-
     """
     clip, orig_fmt = convert_format_RGB24(clip)
-
     clip = SceneDetectEdges(clip, threshold=sc_threshold, ssim_threshold=sc_tht_ssim, sc_diff_offset=sc_tht_offset,
                             sc_min_int=sc_min_int, sc_mult_tht=sc_mult_tht, tht_white=sc_tht_white,
                             tht_black=sc_tht_black, sc_debug=sc_debug)
@@ -685,7 +749,6 @@ def vs_read_video(source: str, fpsnum: int = 0, fpsden: int = 1, width: int = 0,
     :param return_rgb:   If True (default) the clip will be converted in RGB24 format
     :return:             clip in RGB24 format if return_rgb=True
     """
-
     if not os.path.isfile(source):
         CMNET2_LogMessage(MessageType.EXCEPTION, "CMNET2: invalid clip -> " + source)
 
@@ -694,7 +757,6 @@ def vs_read_video(source: str, fpsnum: int = 0, fpsden: int = 1, width: int = 0,
         CMNET2_LogMessage(MessageType.EXCEPTION, "CMNET2: invalid clip extension -> " + source)
 
     load_LSMASHSource_plugin()
-
     try:
         clip = vs.core.lsmas.LWLibavSource(source=source, stream_index=0, fpsnum=fpsnum, fpsden=fpsden,
                                            cache=0, prefer_hw=0)
@@ -728,14 +790,12 @@ def vs_read_video(source: str, fpsnum: int = 0, fpsden: int = 1, width: int = 0,
     clip = vs.core.std.AssumeFPS(clip=clip, fpsnum=clip.fps_num, fpsden=clip.fps_den)
     # making sure the detected scan type is set (detected: progressive)
     clip = vs.core.std.SetFrameProps(clip=clip, _FieldBased=vs.FIELD_PROGRESSIVE)  # progressive
-
     if return_rgb:
         # adjusting color space to RGB24 for CMNET2
         matrix_str = cmnet2_utils._get_matrix_str(clip, default="709")
         clip = clip.resize.Bicubic(format=vs.RGB24, matrix_in_s=matrix_str, range_s="full")
         # adjust _Matrix to RGB
         clip = vs.core.std.SetFrameProps(clip=clip, _Matrix=vs.MATRIX_RGB)
-
         # changing range from limited to full range for CMNET2
         clip = vs.core.resize.Bicubic(clip, range_in_s="limited", range_s="full")
         # setting color range to PC (full) range.
@@ -773,7 +833,6 @@ def vs_extract_reference_frames(clip: vs.VideoNode, sc_threshold: float = consta
                                   ref_jpg_quality: int = constants.DEF_JPG_QUALITY, ref_override: bool = True,
                                   sc_algo:int =0, sc_debug: bool = False) -> vs.VideoNode:
     """Utility function to export reference frames
-
     :param clip:                clip to process, any format is supported.
     :param sc_threshold:        Scene change threshold used to generate the reference frames.
                                 It is a percentage of the luma change between the previous n-frame (n=sc_offset)
@@ -819,12 +878,9 @@ def vs_extract_reference_frames(clip: vs.VideoNode, sc_threshold: float = consta
                                    3: IT will be used SCDetection from MVTools
                                 Default = 0
     :param sc_debug:            Enable SC debug messages. default: False
-
     """
     clip, orig_fmt = convert_format_RGB24(clip)
-
     pathlib.Path(sc_framedir).mkdir(parents=True, exist_ok=True)
-
     if sc_algo == 0:
         clip = SceneDetect(clip, threshold=sc_threshold, tht_offset=sc_tht_offset, frequency=sc_min_freq,
                            sc_tht_filter=sc_tht_ssim, min_length=sc_min_int, tht_white=sc_tht_white,
@@ -854,7 +910,6 @@ def vs_export_reference_frames(clip: vs.VideoNode, sc_framedir: str = "./", ref_
                                  ref_ext: str = constants.DEF_EXPORT_FORMAT, ref_jpg_quality: int = constants.DEF_JPG_QUALITY,
                                  ref_override: bool = True) -> vs.VideoNode:
     """Utility function to export reference frames
-
     :param clip:                clip to process, any format is supported.
     :param sc_framedir:         If set, define the directory where are stored the reference frames.
                                 The reference frames are named as: ref_nnnnnn.[jpg|png].
@@ -864,9 +919,7 @@ def vs_export_reference_frames(clip: vs.VideoNode, sc_framedir: str = "./", ref_
     :param ref_override:        If True, the reference frames with the same name will be overridden, otherwise will
                                 be discarded. default: True
     """
-
     clip, orig_fmt = convert_format_RGB24(clip)
-
     pathlib.Path(sc_framedir).mkdir(parents=True, exist_ok=True)
     clip = vs_sc_export_frames(clip, sc_framedir=sc_framedir, ref_offset=ref_offset, ref_ext=ref_ext,
                                ref_jpg_quality=ref_jpg_quality, ref_override=ref_override)
@@ -877,7 +930,6 @@ def vs_export_list_frames(clip: vs.VideoNode, sc_framedir: str = "./", ref_list:
                             offset: int = 0, ref_ext: str = constants.DEF_EXPORT_FORMAT, ref_jpg_quality: int = constants.DEF_JPG_QUALITY,
                             ref_override: bool = True, fast_extract: bool = True) -> vs.VideoNode:
     """Utility function to export frames included in a list.
-
     :param clip:                clip to process, any format is supported.
     :param sc_framedir:         If set, define the directory where are stored the frames.
                                 The frames are named as: ref_nnnnnn.[jpg|png].
@@ -896,9 +948,7 @@ def vs_export_list_frames(clip: vs.VideoNode, sc_framedir: str = "./", ref_list:
         return clip
 
     clip, orig_fmt = convert_format_RGB24(clip)
-
     pathlib.Path(sc_framedir).mkdir(parents=True, exist_ok=True)
-
     clip = vs_list_export_frames(clip, sc_framedir=sc_framedir, ref_list=ref_list, ref_ext=ref_ext, offset=offset,
                                  ref_jpg_quality=ref_jpg_quality, ref_override=ref_override,fast_extract=fast_extract)
 
@@ -923,11 +973,9 @@ wrapper to function vs_sc_export_frames() to export the clip's reference frames
 def _extract_reference_frames(clip: vs.VideoNode, sc_framedir: str = "./", ref_offset: int = 0, ref_ext: str = "png",
                               ref_override: bool = True, prop_name: str = "_SceneChangePrev") -> vs.VideoNode:
     """Export scene-change frames from clip to a directory on disk.
-
     Creates sc_framedir if it does not exist, converts the clip to RGB24, then delegates
     to vs_sc_export_frames. Primarily used by HAVC_main to persist reference frames for
     subsequent exemplar-based passes.
-
     :param clip:         Input clip (any format).
     :param sc_framedir:  Output directory for reference images. Created if missing.
     :param ref_offset:   Value added to the frame number in each filename. Default 0.
@@ -937,9 +985,7 @@ def _extract_reference_frames(clip: vs.VideoNode, sc_framedir: str = "./", ref_o
     :return:             Clip pass-through (side-effect: reference frames saved to disk).
     """
     pathlib.Path(sc_framedir).mkdir(parents=True, exist_ok=True)
-
     clip, orig_fmt = convert_format_RGB24(clip)
-
     clip = vs_sc_export_frames(clip, sc_framedir=sc_framedir, ref_offset=ref_offset, ref_ext=ref_ext,
                                ref_override=ref_override, prop_name=prop_name)
     return restore_format(clip, orig_fmt)
@@ -957,18 +1003,14 @@ wrapper to function vs_recover_clip_luma().
 
 def _clip_chroma_resize(clip_hires: vs.VideoNode, clip_lowres: vs.VideoNode) -> vs.VideoNode:
     """Upscale clip_lowres to the dimensions of clip_hires and replace its luma with the hi-res luma.
-
     :param clip_hires:  High-resolution clip whose luma plane will be preserved.
     :param clip_lowres: Low-resolution clip whose chroma planes will be upscaled and blended in.
     :return:            Clip at clip_hires resolution with luma from clip_hires and chroma from the upscaled clip_lowres.
     """
     clip_resized = clip_lowres.resize.Spline64(width=clip_hires.width, height=clip_hires.height)
-
     clip_hires, orig_fmt_h = convert_format_RGB24(clip_hires)
     clip_resized, orig_fmt_r = convert_format_RGB24(clip_resized)
-
     clip_recovered = vs_recover_clip_luma(clip_hires, clip_resized)
-
     return restore_format(clip_recovered, orig_fmt_h)
 
 
@@ -984,7 +1026,6 @@ wrapper to function vs_get_clip_frame() to get frames fast.
 
 def _get_clip_frame(clip: vs.VideoNode, nframe: int = 0) -> vs.VideoNode:
     """Extract a single frame from the clip and return it as a one-frame clip, preserving the original format.
-
     :param clip:    Input clip, any format is supported.
     :param nframe:  Zero-based index of the frame to extract. Default = 0.
     :return:        Single-frame clip containing the requested frame in the original clip format.
@@ -1006,7 +1047,6 @@ disable packages warnings.
 
 def disable_warnings():
     """Suppress noisy log output from third-party libraries used by CMNET2.
-
     Sets the log level to ERROR for known verbose packages (matplotlib, PIL, torch,
     numpy, tensorrt, kornia, dinov2) and silences FutureWarning, UserWarning, and
     DeprecationWarning categories project-wide.
@@ -1021,7 +1061,6 @@ def disable_warnings():
         "kornia",
         "dinov2"  # dinov2 is issuing warnings not allowing ColorMNetServer to work properly
     ]
-
     for module in logger_blocklist:
         logging.getLogger(module).setLevel(logging.ERROR)
 
@@ -1029,6 +1068,5 @@ def disable_warnings():
     warnings.simplefilter(action='ignore', category=UserWarning)
     warnings.simplefilter(action='ignore', category=DeprecationWarning)
     # warnings.simplefilter(action="ignore", category=Warning)
-
     torch._logging.set_logs(all=logging.ERROR)
 

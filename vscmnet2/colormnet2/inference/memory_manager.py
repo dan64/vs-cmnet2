@@ -23,7 +23,6 @@ class MemoryManager:
     """
     Manages all three memory stores and the transition between working/long-term memory
     """
-
     def __init__(self, config):
         self.hidden_dim = config['hidden_dim']
         self.top_k = config['top_k']
@@ -39,17 +38,14 @@ class MemoryManager:
         # dimensions will be inferred from input later
         self.CK = self.CV = None
         self.H = self.W = None
-
         # The hidden state will be stored in a single tensor for all objects
         # B x num_objects x CH x H x W
         self.hidden = None
-
         self.work_mem = KeyValueMemoryStore(count_usage=self.enable_long_term)
         if self.enable_long_term:
             self.long_mem = KeyValueMemoryStore(count_usage=self.enable_long_term_usage)
         self.perm_mem = KeyValueMemoryStore(count_usage=False)
         self._perm_frame_count = 0
-
         # Match metrics from the most recent match_memory call. Computed on EVERY
         # call (independently of CSV logging). Read by external callers via
         # ColorMNetRender2.get_last_match_metrics() to decide whether a retry
@@ -57,17 +53,14 @@ class MemoryManager:
         # NaN until the first match_memory call with perm_mem engaged.
         self._last_mmsp = float('nan')  # mean_max_sim_perm
         self._last_perm_share = float('nan')  # perm_share
-
         self.reset_config = True
 
     def update_config(self, config):
         self.reset_config = True
         self.hidden_dim = config['hidden_dim']
         self.top_k = config['top_k']
-
         assert self.enable_long_term == config['enable_long_term'], 'cannot update this'
         assert self.enable_long_term_usage == config['enable_long_term_count_usage'], 'cannot update this'
-
         self.enable_long_term_usage = config['enable_long_term_count_usage']
         if self.enable_long_term:
             self.max_mt_frames = config['max_mid_term_frames']
@@ -120,22 +113,17 @@ class MemoryManager:
         # selection:  B x C^k x H x W
         num_groups = self.work_mem.num_groups
         h, w = query_key.shape[-2:]
-
         query_key = query_key.flatten(start_dim=2)
         selection = selection.flatten(start_dim=2) if selection is not None else None
-
         perm_mem_size = self.perm_mem.size if self.perm_mem.engaged() else 0
-
         """
         Memory readout using keys
         """
-
         if self.enable_long_term and self.long_mem.engaged():
             # Use long-term memory
             long_mem_size = self.long_mem.size
             memory_key = torch.cat([self.long_mem.key, self.work_mem.key], -1)
             shrinkage = torch.cat([self.long_mem.shrinkage, self.work_mem.shrinkage], -1)
-
             if self.perm_mem.engaged():
                 memory_key = torch.cat([self.perm_mem.key, memory_key], -1)
                 shrinkage = torch.cat([self.perm_mem.shrinkage, shrinkage], -1)
@@ -143,7 +131,6 @@ class MemoryManager:
             similarity = get_similarity(memory_key, shrinkage, query_key, selection)
             work_mem_similarity = similarity[:, perm_mem_size + long_mem_size:]
             long_mem_similarity = similarity[:, perm_mem_size:perm_mem_size + long_mem_size]
-
             # get the usage with the first group
             # the first group always have all the keys valid
             long_v0 = self.long_mem.get_v_size(0)
@@ -181,7 +168,6 @@ class MemoryManager:
                 self._last_perm_share = _ps
 
             affinity = [affinity]
-
             # compute affinity group by group as later groups only have a subset of keys
             for gi in range(1, num_groups):
                 if gi < self.long_mem.num_groups:
@@ -221,7 +207,6 @@ class MemoryManager:
             # usage has shape [..., perm_mem_size + long_v0 + work_size]
             work_usage = usage[:, perm_mem_size + long_mem_size:]
             self.work_mem.update_usage(work_usage.flatten())
-
             if self.enable_long_term_usage:
                 # ignore the index return for working memory and perm_mem
                 long_usage = usage[:, perm_mem_size:perm_mem_size + long_mem_size]
@@ -231,7 +216,6 @@ class MemoryManager:
             if self.perm_mem.engaged():
                 combined_key = torch.cat([self.perm_mem.key, self.work_mem.key], -1)
                 combined_shrinkage = torch.cat([self.perm_mem.shrinkage, self.work_mem.shrinkage], -1)
-
                 similarity = get_similarity(combined_key, combined_shrinkage, query_key, selection)
                 perm_mem_similarity = similarity[:, :perm_mem_size]
                 work_mem_similarity = similarity[:, perm_mem_size:]
@@ -284,7 +268,6 @@ class MemoryManager:
                                           top_k=self.top_k, return_usage=False)
 
             affinity = [affinity]
-
             # compute affinity group by group as later groups only have a subset of keys
             for gi in range(1, num_groups):
                 if self.perm_mem.engaged() and gi < self.perm_mem.num_groups:
@@ -312,7 +295,6 @@ class MemoryManager:
             self._readout(affinity[gi], gv)
             for gi, gv in enumerate(all_memory_value)
         ], 0)
-
         return all_readout_mem.view(all_readout_mem.shape[0], self.CV, h, w)
 
     def add_memory(self, key, shrinkage, value, objects, selection=None):
@@ -333,17 +315,14 @@ class MemoryManager:
         key = key.flatten(start_dim=2)
         shrinkage = shrinkage.flatten(start_dim=2)
         value = value[0].flatten(start_dim=2)
-
         self.CK = key.shape[1]
         self.CV = value.shape[1]
-
         if selection is not None:
             if not self.enable_long_term:
                 _buf_warning(f"MemoryManager.add_memory(): the selection factor is only needed in long-term mode")
             selection = selection.flatten(start_dim=2)
 
         self.work_mem.add(key, value, shrinkage, selection, objects)
-
         # long-term memory cleanup
         if self.enable_long_term:
             # Do memory compressed if needed
@@ -411,7 +390,6 @@ class MemoryManager:
 
         # remove consolidated working memory
         self.work_mem.sieve_by_range(HW, -self.min_work_elements + HW, min_size=self.min_work_elements + HW)
-
         # add to long-term memory
         self.long_mem.add(prototype_key, prototype_value, prototype_shrinkage, selection=None, objects=None)
 
@@ -419,40 +397,32 @@ class MemoryManager:
         # keys: 1*C*N
         # values: num_objects*C*N
         N = candidate_key.shape[-1]
-
         # find the indices with max usage
         _, max_usage_indices = torch.topk(usage, k=self.num_prototypes, dim=-1, sorted=True)
         prototype_indices = max_usage_indices.flatten()
-
         # Prototypes are invalid for out-of-bound groups
         validity = [prototype_indices >= (N - gv.shape[2]) if gv is not None else None for gv in candidate_value]
-
         prototype_key = candidate_key[:, :, prototype_indices]
         prototype_selection = candidate_selection[:, :, prototype_indices] if candidate_selection is not None else None
-
         """
         Potentiation step
         """
         similarity = get_similarity(candidate_key, candidate_shrinkage, prototype_key, prototype_selection)
-
         # convert similarity to affinity
         # need to do it group by group since the softmax normalization would be different
         affinity = [
             do_softmax(similarity[:, -gv.shape[2]:, validity[gi]]) if gv is not None else None
             for gi, gv in enumerate(candidate_value)
         ]
-
         # some values can be have all False validity. Weed them out.
         affinity = [
             aff if aff is None or aff.shape[-1] > 0 else None for aff in affinity
         ]
-
         # readout the values
         prototype_value = [
             self._readout(affinity[gi], gv) if affinity[gi] is not None else None
             for gi, gv in enumerate(candidate_value)
         ]
-
         # readout the shrinkage term
         prototype_shrinkage = self._readout(affinity[0],
                                             candidate_shrinkage) if candidate_shrinkage is not None else None

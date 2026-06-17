@@ -127,6 +127,23 @@ clip = vs_cmnet2dit(
 )
 ```
 
+### Re-color a range of frames
+
+Re-colorizes only the frames between two reference frames, leaving the rest unchanged. Useful for fixing specific sections of an already colored clip.
+
+```python
+from vscmnet2 import vs_cmnet2_recolor
+
+clip = vs_cmnet2_recolor(
+    clip,
+    ref_framedir="/path/to/refs",
+    ref_start_path="/path/to/refs/ref_000100.png",
+    ref_end_path="/path/to/refs/ref_000200.png",
+    method=4,
+    max_memory_frames=20,
+)
+```
+
 ### Read external video
 
 ```python
@@ -138,6 +155,22 @@ clip = vs_read_video("/path/to/video.mkv")
 ---
 
 ## Key Parameters
+
+### `vs_cmnet2_recolor`
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `clip` | VideoNode | — | Already colorized clip to re-color |
+| `method` | int | `4` | 3=ref same as video, 4=ref different from video |
+| `render_speed` | str | `"auto"` | `auto`, `fast`, `medium`, `slow`, `slower` |
+| `render_vivid` | bool | `False` | +15% saturation boost |
+| `ref_framedir` | str | — | Directory with reference frames (format: ref_NNNNNN.png) |
+| `ref_start_path` | str | — | First reference frame to re-color from |
+| `ref_end_path` | str | — | Last reference frame to re-color to |
+| `max_memory_frames` | int | `0` (→20) | Permanent-memory window size (even, 10–500) |
+| `retry_threshold` | float | `0.0` | Retry trigger (0.0=disabled; suggest 0.20–0.35) |
+| `retry_model` | int | `1` | 1=DiT fp4, 2=DiT int4 |
+| `torch_dir` | str | model dir | Torch hub cache location |
 
 ### `vs_cmnet2`
 

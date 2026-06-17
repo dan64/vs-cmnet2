@@ -23,17 +23,12 @@ class ColorMNet(nn.Module):
         """
         super().__init__()
         model_weights = self.init_hyperparameters(config, model_path, map_location)
-
         self.single_object = config.get('single_object', False)
         # print(f'Single object mode: {self.single_object}')
-
         self.key_encoder = KeyEncoder_DINOv2_v6()
-
         self.value_encoder = ValueEncoder(self.value_dim, self.hidden_dim, self.single_object)
-
         # Projection from f16 feature space to key/value space
         self.key_proj = KeyProjection(1024, self.key_dim) # 1024 -> 384 -> 3072
-
         self.short_term_attn = LocalGatedPropagation(d_qk=64, # 256
                                           d_vu=512 * 2,
                                           num_head=1,
@@ -45,7 +40,6 @@ class ColorMNet(nn.Module):
                                           expand_ratio=1)
 
         self.decoder = Decoder(self.value_dim, self.hidden_dim)
-
         if model_weights is not None:
             self.load_weights(model_weights, init_as_zero_if_needed=True)
 
@@ -65,7 +59,6 @@ class ColorMNet(nn.Module):
 
         f16, f8, f4 = self.key_encoder(frame)
         key, shrinkage, selection = self.key_proj(f16, need_sk, need_ek)
-
         if need_reshape:
             # B*C*T*H*W
             key = key.view(b, t, *key.shape[-3:]).transpose(1, 2).contiguous()
@@ -93,7 +86,6 @@ class ColorMNet(nn.Module):
             others = torch.zeros_like(masks)
 
         g16, h16 = self.value_encoder(frame, image_feat_f16, h16, masks, others, is_deep_update)
-
         return g16, h16
 
     # Used in training only. 
@@ -109,11 +101,9 @@ class ColorMNet(nn.Module):
         """
         batch_size, num_objects = memory_value.shape[:2]
         memory_value = memory_value.flatten(start_dim=1, end_dim=2)
-
         affinity = get_affinity(memory_key, memory_shrinkage, query_key, query_selection)
         memory = readout(affinity, memory_value)
         memory = memory.view(batch_size, num_objects, self.value_dim, *memory.shape[-2:])
-
         return memory
 
     def read_memory_short(self, query_key, memory_key, memory_value):
@@ -126,22 +116,16 @@ class ColorMNet(nn.Module):
         """
         batch_size, num_objects = memory_value.shape[:2]
         memory_value = memory_value.flatten(start_dim=1, end_dim=2)
-
         size_2d = query_key.shape[-2:]
         memory_value_short, _ = self.short_term_attn(query_key, memory_key, memory_value, None, size_2d)
-
         memory_value_short = memory_value_short.permute(1, 2, 0).view(batch_size, num_objects, self.value_dim, *memory_value.shape[-2:])
-
         return memory_value_short
     
     def segment(self, multi_scale_features, memory_readout,
                     hidden_state, selector=None, h_out=True, strip_bg=True): 
-
         hidden_state, logits = self.decoder(*multi_scale_features, hidden_state, memory_readout, h_out=h_out)
-        
         prob = torch.tanh(logits)
         logits = prob
-
         return hidden_state, logits, prob
 
     def forward(self, mode, *args, **kwargs):
@@ -163,7 +147,6 @@ class ColorMNet(nn.Module):
         Init three hyperparameters: key_dim, value_dim, and hidden_dim
         If model_path is provided, we load these from the model weights
         The actual parameters are then updated to the config in-place
-
         Otherwise we load it either from the config or default
         """
         if model_path is not None:
@@ -204,7 +187,6 @@ class ColorMNet(nn.Module):
         config['key_dim'] = self.key_dim
         config['value_dim'] = self.value_dim
         config['hidden_dim'] = self.hidden_dim
-
         return model_weights
 
     def load_weights(self, src_dict, init_as_zero_if_needed=False):

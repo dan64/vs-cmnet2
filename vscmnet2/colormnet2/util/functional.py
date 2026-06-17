@@ -35,9 +35,7 @@ def _is_numpy_image(img):
 
 def to_tensor(pic):
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
-
     See ``ToTensor`` for more details.
-
     Args:
         pic (PIL Image or numpy.ndarray): Image to be converted to tensor.
 
@@ -84,9 +82,7 @@ def to_tensor(pic):
 
 def to_mytensor(pic):
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
-
     See ``ToTensor`` for more details.
-
     Args:
         pic (PIL Image or numpy.ndarray): Image to be converted to tensor.
 
@@ -105,15 +101,12 @@ def to_mytensor(pic):
 
 def to_pil_image(pic, mode=None):
     """Convert a tensor or an ndarray to PIL Image.
-
     See :class:`~torchvision.transforms.ToPIlImage` for more details.
-
     Args:
         pic (Tensor or numpy.ndarray): Image to be converted to PIL Image.
         mode (`PIL.Image mode`_): color space and pixel depth of input data (optional).
 
     .. _PIL.Image mode: http://pillow.readthedocs.io/en/3.4.x/handbook/concepts.html#modes
-
     Returns:
         PIL Image: Image converted to PIL Image.
     """
@@ -168,9 +161,7 @@ def to_pil_image(pic, mode=None):
 
 def normalize(tensor, mean, std):
     """Normalize a tensor image with mean and standard deviation.
-
     See ``Normalize`` for more details.
-
     Args:
         tensor (Tensor): Tensor image of size (C, H, W) to be normalized.
         mean (sequence): Sequence of means for each channel.
@@ -192,7 +183,6 @@ def normalize(tensor, mean, std):
 
 def resize(img, size, interpolation=Image.BILINEAR):
     """Resize the input PIL Image to the given size.
-
     Args:
         img (PIL Image): Image to be resized.
         size (sequence or int): Desired output size. If size is a sequence like
@@ -233,7 +223,6 @@ def scale(*args, **kwargs):
 
 def pad(img, padding, fill=0):
     """Pad the given PIL Image on all sides with the given "pad" value.
-
     Args:
         img (PIL Image): Image to be padded.
         padding (int or tuple): Padding on each border. If a single int is provided this
@@ -265,7 +254,6 @@ def pad(img, padding, fill=0):
 
 def crop(img, i, j, h, w):
     """Crop the given PIL Image.
-
     Args:
         img (PIL Image): Image to be cropped.
         i: Upper pixel coordinate.
@@ -294,9 +282,7 @@ def center_crop(img, output_size):
 
 def resized_crop(img, i, j, h, w, size, interpolation=Image.BILINEAR):
     """Crop the given PIL Image and resize it to desired size.
-
     Notably used in RandomResizedCrop.
-
     Args:
         img (PIL Image): Image to be cropped.
         i: Upper pixel coordinate.
@@ -317,7 +303,6 @@ def resized_crop(img, i, j, h, w, size, interpolation=Image.BILINEAR):
 
 def hflip(img):
     """Horizontally flip the given PIL Image.
-
     Args:
         img (PIL Image): Image to be flipped.
 
@@ -332,7 +317,6 @@ def hflip(img):
 
 def vflip(img):
     """Vertically flip the given PIL Image.
-
     Args:
         img (PIL Image): Image to be flipped.
 
@@ -347,7 +331,6 @@ def vflip(img):
 
 def five_crop(img, size):
     """Crop the given PIL Image into four corners and the central crop.
-
     .. Note::
         This transform returns a tuple of images and there may be a
         mismatch in the number of inputs and targets your ``Dataset`` returns.
@@ -403,7 +386,6 @@ def ten_crop(img, size, vertical_flip=False):
         assert len(size) == 2, "Please provide only two dimensions (h, w) for size."
 
     first_five = five_crop(img, size)
-
     if vertical_flip:
         img = vflip(img)
     else:
@@ -415,7 +397,6 @@ def ten_crop(img, size, vertical_flip=False):
 
 def adjust_brightness(img, brightness_factor):
     """Adjust brightness of an Image.
-
     Args:
         img (PIL Image): PIL Image to be adjusted.
         brightness_factor (float):  How much to adjust the brightness. Can be
@@ -435,7 +416,6 @@ def adjust_brightness(img, brightness_factor):
 
 def adjust_contrast(img, contrast_factor):
     """Adjust contrast of an Image.
-
     Args:
         img (PIL Image): PIL Image to be adjusted.
         contrast_factor (float): How much to adjust the contrast. Can be any
@@ -455,7 +435,6 @@ def adjust_contrast(img, contrast_factor):
 
 def adjust_saturation(img, saturation_factor):
     """Adjust color saturation of an image.
-
     Args:
         img (PIL Image): PIL Image to be adjusted.
         saturation_factor (float):  How much to adjust the saturation. 0 will
@@ -475,16 +454,12 @@ def adjust_saturation(img, saturation_factor):
 
 def adjust_hue(img, hue_factor):
     """Adjust hue of an image.
-
     The image hue is adjusted by converting the image to HSV and
     cyclically shifting the intensities in the hue channel (H).
     The image is then converted back to original image mode.
-
     `hue_factor` is the amount of shift in H channel and must be in the
     interval `[-0.5, 0.5]`.
-
     See https://en.wikipedia.org/wiki/Hue for more details on Hue.
-
     Args:
         img (PIL Image): PIL Image to be adjusted.
         hue_factor (float):  How much to shift the hue channel. Should be in
@@ -507,27 +482,22 @@ def adjust_hue(img, hue_factor):
         return img
 
     h, s, v = img.convert("HSV").split()
-
     np_h = np.array(h, dtype=np.uint8)
     # uint8 addition take cares of rotation across boundaries
     with np.errstate(over="ignore"):
         np_h += np.uint8(hue_factor * 255)
     h = Image.fromarray(np_h, "L")
-
     img = Image.merge("HSV", (h, s, v)).convert(input_mode)
     return img
 
 
 def adjust_gamma(img, gamma, gain=1):
     """Perform gamma correction on an image.
-
     Also known as Power Law Transform. Intensities in RGB mode are adjusted
     based on the following equation:
-
         I_out = 255 * gain * ((I_in / 255) ** gamma)
 
     See https://en.wikipedia.org/wiki/Gamma_correction for more details.
-
     Args:
         img (PIL Image): PIL Image to be adjusted.
         gamma (float): Non negative real number. gamma larger than 1 make the
@@ -543,11 +513,9 @@ def adjust_gamma(img, gamma, gain=1):
 
     input_mode = img.mode
     img = img.convert("RGB")
-
     np_img = np.array(img, dtype=np.float32)
     np_img = 255 * gain * ((np_img / 255) ** gamma)
     np_img = np.uint8(np.clip(np_img, 0, 255))
-
     img = Image.fromarray(np_img, "RGB").convert(input_mode)
     return img
 
@@ -571,7 +539,6 @@ def rotate(img, angle, resample=False, expand=False, center=None):
             Origin is the upper left corner.
             Default is the center of the image.
     """
-
     if not _is_pil_image(img):
         raise TypeError("img should be PIL Image. Got {}".format(type(img)))
 
@@ -580,7 +547,6 @@ def rotate(img, angle, resample=False, expand=False, center=None):
 
 def to_grayscale(img, num_output_channels=1):
     """Convert image to grayscale version of image.
-
     Args:
         img (PIL Image): Image to be converted to grayscale.
 

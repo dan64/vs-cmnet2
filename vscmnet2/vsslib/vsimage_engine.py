@@ -148,24 +148,19 @@ class CMNET2ditEngine:
     When host is 127.0.0.1 / localhost, image data is transferred via shared
     memory (zero-copy, ~23% faster). For remote hosts the standard RPC
     transport (PNG bytes, base64) is used automatically.
-
     Singleton Notes
     ------------------
     CMNET2ditEngine() with different parameters after the first instance
     returns the existing instance unchanged.
     To change parameters: call reset() before rebuilding.
     """
-
     _instance    = None
     _initialized = False
-
     # Timeout for fast calls (ping, is_pipeline_loaded)
     _CONNECT_TIMEOUT = DEF_CONNECT_TIMEOUT    # secondi
-
     # Timeout for slow calls (load_pipeline, colorize_frame).
     # load_pipeline() can take more time on slow hardware.
     _CALL_TIMEOUT = DEF_CALL_TIMEOUT  # secondi
-
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -202,17 +197,14 @@ class CMNET2ditEngine:
         self._prompt                = prompt
         self._steps                 = steps
         self._img_size              = img_size
-
         # Proxy RPC - initialized to the first call to colorize_image()
         self._proxy_fast = None   # ping, is_pipeline_loaded
         self._proxy_slow = None   # load_pipeline, colorize_frame
-
         self._initialized = True
 
     # ------------------------------------------------------------------
     # Lazy connection + pipeline load
     # ------------------------------------------------------------------
-
     @property
     def _use_shm(self) -> bool:
         """True when server and client are on the same host (shared memory available)."""
@@ -240,14 +232,12 @@ class CMNET2ditEngine:
         """
         Open RPC proxies and load the pipeline on first use.
         No-op if already connected.
-
         Both proxies use use_builtin_types=True for correct bool/int handling.
         """
         if self._proxy_fast is not None:
             return
 
         uri = f"http://{self._host}:{self._port}"
-
         proxy_fast = xmlrpc.client.ServerProxy(
             uri,
             transport=_TimeoutTransport(self._CONNECT_TIMEOUT),
@@ -260,7 +250,6 @@ class CMNET2ditEngine:
             allow_none=True,
             use_builtin_types=True,
         )
-
         # Verify connection
         try:
             if proxy_fast.ping() != "pong":
@@ -302,15 +291,12 @@ class CMNET2ditEngine:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-
     def colorize_image(self, pil_img: Image.Image) -> Image.Image:
         """
         Colorize a single B&W frame via the RPC server.
-
         When the server is on the same host (127.0.0.1 / localhost), image
         data is transferred via shared memory (zero-copy). For remote hosts
         the standard PNG-over-RPC transport is used automatically.
-
         Parameters
         ----------
         pil_img : PIL.Image.Image
@@ -338,7 +324,6 @@ class CMNET2ditEngine:
             pil_img = pil_img.convert("RGB")
 
         self._ensure_connection()
-
         if self._use_shm:
             return self._colorize_image_shm(pil_img)
 
@@ -394,14 +379,11 @@ class CMNET2ditEngine:
     ) -> tuple:
         """
         Colorize two B&W frames in a single inference pass.
-
         The two images are placed side-by-side and processed in one forward
         pass, roughly halving the per-image cost versus two separate calls.
-
         When the server is on the same host (127.0.0.1 / localhost), image
         data is transferred via shared memory (zero-copy). For remote hosts
         the standard PNG-over-RPC transport is used automatically.
-
         Parameters
         ----------
         pil_img1, pil_img2 : PIL.Image.Image
@@ -429,7 +411,6 @@ class CMNET2ditEngine:
             pil_img2 = pil_img2.convert("RGB")
 
         self._ensure_connection()
-
         if self._use_shm:
             return self._colorize_image_pair_shm(pil_img1, pil_img2)
 
@@ -488,11 +469,9 @@ class CMNET2ditEngine:
     def reset(cls):
         """
         Closes RPC proxies and resets the singleton.
-
         It's a @classmethod because it operates on class state (_instance,
         _initialized), not instance state. cls._instance ensures
         that the class variable is modified without shadowing.
-
         After reset(), the next call to CMNET2ditEngine(...) creates a
         new instance, possibly with different parameters.
         Use sparingly (pipeline reload takes ~3.5 min).
@@ -526,19 +505,16 @@ class CMNET2imageEngine:
     fresh reference). For colorizing entire clips, use vs_sc_deoldify /
     vs_sc_ddcolor / vs_combine_models — they have their own model lifecycle
     scoped to the filter.
-
     Singleton scope: one engine per process. The DeOldify and DDColor models
     are loaded into GPU memory ONCE, lazily, on first use of colorize_merged().
     Calling CMNET2imageEngine() with different parameters after the first call
     has NO EFFECT — the existing instance is returned with its original
     configuration. To switch parameters mid-process, call reset() first
     (not recommended in steady-state).
-
     Lazy loading: instantiating CMNET2imageEngine() does NOT load any model. The
     DeOldify model is loaded on the first colorize_merged() call; the DDColor
     model is loaded on the first DDColorEngine() call inside it. If the engine
     is never used (e.g. retry never triggers in the clip), no VRAM is consumed.
-
     Typical usage:
         engine = CMNET2imageEngine(modelname='video', render_factor=32)
         merged_img = engine.colorize_merged(bw_pil_image)
@@ -553,7 +529,6 @@ class CMNET2imageEngine:
     """
     _instance = None
     _initialized = False
-
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -567,7 +542,6 @@ class CMNET2imageEngine:
         # Validate parameters early — model loading is deferred to first use.
         _DIT_MAP = {1: "fp4", 2: "int4"}
         self._dit_model = _DIT_MAP.get(color_model)  # None for 0 or out-of-range -> CMNET2 fallback
-
         if modelname not in ('video', 'stable', 'artistic'):
             raise ValueError(
                 f"CMNET2imageEngine: modelname must be 'video', 'stable' or 'artistic', "
@@ -587,22 +561,18 @@ class CMNET2imageEngine:
         self._ddcolor_model = ddcolor_model
         self._ddcolor_input_size = render_factor * 16
         self._merge_weight = merge_weight
-
         # Resolve package_dir from this file's location: mcomb.py is in vsslib/,
         # so the parent directory is the vscmnet2 package root
         # ModelImageRender expects.
         self._package_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-
         # Lazily-initialised engines.
         self._deoldify_engine = None  # ModelImageRender
         self._ddcolor_engine = None   # vsddcolor.DDColorEngine
         self._dit_engine = None # DiT engine
-
         self._initialized = True
 
 
     def _ensure_engines(self):
-
         # Try to load first DiT Model
         if self._dit_model is not None:
             try:
@@ -621,7 +591,6 @@ class CMNET2imageEngine:
         """
         Colorize a single PIL B&W image as a weighted merge of DeOldify and
         DDColor outputs.
-
         :param pil_img: B&W input as PIL Image, mode 'RGB' (L replicated 3 times).
         :return:        Merged colorized PIL Image, mode 'RGB', same resolution
                         as input.
@@ -632,7 +601,6 @@ class CMNET2imageEngine:
             pil_img = pil_img.convert('RGB')
 
         self._ensure_engines()
-
         if self._dit_engine is not None:
             return self._dit_engine.colorize_merged(pil_img)
 
@@ -646,7 +614,6 @@ class CMNET2imageEngine:
         """
         # Drop DeOldify reference; relies on Python GC + torch.cuda.empty_cache.
         self._deoldify_engine = None
-
         # DiTEngine has its own reset() that handles its singleton.
         if self._dit_engine is not None:
             try:

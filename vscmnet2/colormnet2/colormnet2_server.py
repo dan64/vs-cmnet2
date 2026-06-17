@@ -34,7 +34,6 @@ class ColorMNetRPCServer2:
     server_address: str = None
     server_port: int = None
     server: SimpleXMLRPCServer = None
-
     # Restrict to a particular path.
     class RequestHandler(SimpleXMLRPCRequestHandler):
         rpc_paths = ('/RPC2',)
@@ -58,12 +57,10 @@ class ColorMNetRPCServer2:
     class ColorMNetService:
         render: ColorMNetRender2 = None
         _preload_counter: int = 0
-
         def initialize(self, image_size: int = -1, vid_length: int = 1000, enable_resize: bool = False,
                        encode_mode: int = 0, propagate: bool = False, max_memory_frames: int = None,
                        reset_on_ref_update: bool = True, retry_mmsp_threshold: float = -1.0,
                        retry_perm_share_threshold: float = 0.30, retry_model: int = 0):
-
             # Force a fresh render on reinitialization (e.g. VSEdit loop).
             # The render is a singleton and would otherwise keep stale state.
             if self.render is not None:
@@ -111,7 +108,6 @@ class ColorMNetRPCServer2:
             Thin RPC wrapper around ColorMNetRender2.colorize_frame_with_retry().
             All retry logic (CMNET2imageEngine instantiation, merge, blend, ref
             injection, recolor) lives in the render. See render docstring.
-
             Parameters:
                 img_byte_array        : image to be colorized
                 ti                    : frame number of image to be colorized
@@ -165,7 +161,6 @@ class ColorMNetRPCServer2:
             Returns the (mmsp, perm_share) tuple from the most recent ColorizeImage
             call. Both values are serialized as None when NaN (XMLRPC does not
             handle NaN natively); the client converts None back to float('nan').
-
             Returns:
                 [mmsp_or_none, perm_share_or_none]  (XMLRPC array of length 2)
             """
@@ -183,7 +178,6 @@ class ColorMNetRPCServer2:
             Returns True when the most recent ColorizeImage call indicates that
             an additional reference frame is likely needed for proper
             colorization. Thresholds are the ones configured at initialize().
-
             Stateless: each call evaluates the latest metrics independently.
             Returns False if the render is not initialized or metrics are NaN.
             """
@@ -194,7 +188,6 @@ class ColorMNetRPCServer2:
 
         def PollLogMessages(self) -> list:
             """Return and clear pending server log messages.
-
             Each item is a 2-element list [level:int, text:str] to keep the
             XML-RPC payload minimal. Level matches MessageType integer values.
             """
@@ -207,7 +200,6 @@ class ColorMNetRPCServer2:
         # The server only attaches (create=False) and detaches — no cleanup
         # responsibility. This mirrors the protocol used in DiTServerRPC.
         # ------------------------------------------------------------------
-
         @staticmethod
         def _shm_to_img(shm_name: str, height: int, width: int):
             """Attach to a client-owned SharedMemory segment and return a PIL Image."""
@@ -290,7 +282,6 @@ class ColorMNetServer2:
     rpc_server: ColorMNetRPCServer2 = None
     rpc_thread: threading.Thread = None
     context: any = None
-
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)

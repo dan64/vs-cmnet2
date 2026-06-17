@@ -32,11 +32,9 @@ def SceneDetectEdges(clip: vs.VideoNode, threshold: float = 0.04, frequency: int
                      sc_diff_offset: int = 2, sc_min_int:int = 30, sc_mult_tht: int = 15, tht_white: float =0.70,
                      tht_black: float =0.10, sc_debug: bool = False) -> vs.VideoNode:
     """Edge-based scene change detector using a Retinex-enhanced Kirsch/TCanny edge mask.
-
     Computes masked pixel-difference statistics between temporally offset frames, combining
     them with a misc.SCDetect pre-pass. Optional SSIM post-filtering (SceneDetectionFiltered)
     further refines the detections. Annotates _SceneChangePrev/_SceneChangeNext frame properties.
-
     :param clip:            Input clip (any format).
     :param threshold:       Edge-diff threshold for scene detection [0, 1]. Default 0.04.
     :param frequency:       If > 0, emit a scene change at least every 'frequency' frames. Default 0.
@@ -51,14 +49,11 @@ def SceneDetectEdges(clip: vs.VideoNode, threshold: float = 0.04, frequency: int
     """
     clip = clip.std.SetFrameProp(prop="sc_threshold", floatval=threshold)
     clip = clip.std.SetFrameProp(prop="sc_frequency", intval=frequency)
-
     if threshold == 0 and frequency == 0:
         return clip
 
     def set_scene_change_freq(n, f, freq: int = 1) -> vs.VideoFrame:
-
         f_out = f.copy()
-
         if freq == 1:
             f_out.props['_SceneChangePrev'] = 1
             f_out.props['_SceneChangeNext'] = 0
@@ -78,15 +73,11 @@ def SceneDetectEdges(clip: vs.VideoNode, threshold: float = 0.04, frequency: int
 
     sc_mult_tht = 7 if sc_mult_tht == 0 else sc_mult_tht
     sc_diff_offset=max(sc_diff_offset, 1)
-
     try:
-
         # add new properties for scene detection
         clip = clip.std.SetFrameProp(prop="sc_luma", floatval=0.15)
         clip = clip.std.SetFrameProp(prop="sc_reason", floatval=0)
-
         edge_threshold = round(1.75*threshold,5)
-
         sc = vs_edge_based_scenedetect(
             clip,
             ssim_diff_threshold=edge_threshold,
@@ -98,7 +89,6 @@ def SceneDetectEdges(clip: vs.VideoNode, threshold: float = 0.04, frequency: int
             tht_black=tht_black,
             sc_debug=sc_debug
         )
-
         if ssim_threshold > 0:
             min_length = max(int(round(sc_min_int/3.0)),1)
             sc_class = SceneDetectionFiltered(sc_tht_white=tht_white, sc_tht_black=tht_black, sc_frequency=frequency,
@@ -119,10 +109,8 @@ def SceneDetectEdges(clip: vs.VideoNode, threshold: float = 0.04, frequency: int
 
 def kirsch(src: vs.VideoNode) -> vs.VideoNode:
     """Compute a Kirsch edge-detection map via 4 directional 3×3 convolutions.
-
     Each of the 4 rotated kernels detects edges in a different direction; the final
     result is the per-pixel maximum across all 4 directions (via akarin.Expr).
-
     :param src: GRAY8 or single-plane input clip.
     :return:    Edge-strength clip (same format as src).
     """
@@ -133,9 +121,7 @@ def kirsch(src: vs.VideoNode) -> vs.VideoNode:
 
 def fast_edgemask(rgb: vs.VideoNode, sigma: float = 1.0) -> vs.VideoNode:
     """Build an edge mask combining gamma enhancement, Kirsch, and TCanny.
-
     The final mask is the per-pixel sum of Kirsch and TCanny edges, clamped to [0, 255].
-
     :param rgb:    GRAY8 input clip.
     :param sigma:  TCanny Gaussian sigma. Default 1.0.
     :return:       GRAY8 edge-strength clip.
@@ -143,11 +129,8 @@ def fast_edgemask(rgb: vs.VideoNode, sigma: float = 1.0) -> vs.VideoNode:
     # Gamma boost: sqrt(x/255) * 255
     #enhanced = core.std.Expr(rgb, 'x 255 / sqrt 255 *')
     enhanced = core.akarin.Expr(rgb, 'x 255 / sqrt 255 *')
-
     kirsch_edge = kirsch(rgb)
-
     tcanny_edge = enhanced.tcanny.TCanny(mode=1, sigma=sigma)
-
     return core.std.Expr([kirsch_edge, tcanny_edge], 'x y + 255 min')
 
 # Variabile globale
@@ -167,13 +150,11 @@ def vs_edge_based_scenedetect(
     sc_debug: bool = False
 ) -> vs.VideoNode:
     """Core edge-based scene detection using a Retinex-enhanced edge mask and PlaneStats.
-
     Computes masked (edge-weighted) pixel-difference statistics between frame[n] and
     frame[n+sc_diff_offset]. A scene change is accepted when both the SSIM-style total
     diff and the edge-masked diff exceed their respective thresholds, subject to the
     sc_min_distance enforcement and sc_mult_tht override for very large edges.
     Very dark or very bright frames (outside [tht_black, tht_white]) are suppressed.
-
     :param clip:                Input clip (any format).
     :param ssim_diff_threshold: Total pixel-diff threshold (4× PlaneStatsAverage). Default 0.10.
     :param edge_diff_threshold: Masked edge-diff threshold (10× PlaneStatsAverage). Default 0.07.
@@ -189,20 +170,16 @@ def vs_edge_based_scenedetect(
     global _last_sc_frame, _last_sc_status
     _last_sc_frame = -sc_min_distance  # resetta ad ogni chiamata
     _last_sc_status = ""
-
     # Caricamento plugins
     load_SCDetect_plugin()
     load_TCanny_plugin()
     load_Akarin_plugin()
-
     # --- 1. Preparazione GRAY16 ---
     gray = core.resize.Bicubic(clip, format=vs.GRAY8, matrix_s="709")
     gray = resize_min_HW(gray)
     sc_gray = vsutil.SCDetect(clip=gray, threshold=0.10)
-
     clip_curr = gray
     clip_next = gray[sc_diff_offset:] + gray[-sc_diff_offset]
-
     # --- 2. Maschera edge + differenza ---
     edge_mask = fast_edgemask(gray, sigma=canny_sigma)
     #diff = core.std.Expr([clip_curr, clip_next], 'x y - abs')
@@ -210,14 +187,11 @@ def vs_edge_based_scenedetect(
     masked_diff = core.std.MaskedMerge(core.std.BlankClip(diff), diff, edge_mask)
     maskdiff_stats = core.std.PlaneStats(masked_diff)
     diff_stats = core.std.PlaneStats(diff)
-
     def set_sc_prop(n, f, ssim_diff_threshold:float, edge_diff_threshold: float, diff_stats: vs.VideoNode,
                     maskdiff_stats: vs.VideoNode, sc_min_distance: int, sc_mult_tht:int , tht_white: float,
                     tht_black: float, sc_debug) -> vs.VideoNode:
-
         global _last_sc_frame, _last_sc_status
         f_out = f[0].copy()
-
         if n == 0:
             f_out.props['_SceneChangePrev'] = 1
             f_out.props['_SceneChangeNext'] = 0
@@ -230,10 +204,8 @@ def vs_edge_based_scenedetect(
         # --------------------
         f_y = vsutil.frame_to_np_array(f[1])[:, :, 0]
         f_luma: float = round(np.mean(f_y) / 255.0, 4)
-
         edge_diff = round(10*maskdiff_stats.get_frame(n).props.PlaneStatsAverage, 5)
         ssim_diff = round(4*diff_stats.get_frame(n).props.PlaneStatsAverage, 5)
-
         # Resetta SC se fuori range di luma
         in_luma_range = tht_black <= f_luma <= tht_white
         above_threshold = (edge_diff > edge_diff_threshold) and (ssim_diff > ssim_diff_threshold)
@@ -241,12 +213,10 @@ def vs_edge_based_scenedetect(
         above_distance_min = (n - _last_sc_frame) >= max(int(sc_mult_tht*0.5), 3)
         mandatory_ref_1 = f[1].props['_SceneChangePrev'] == 1
         mandatory_ref_2 = edge_diff > (edge_diff_threshold*sc_mult_tht)
-
         f_out.props['sc_luma'] = f_luma
         f_out.props['sc_reason'] = 0
         f_out.props['_SceneChangePrev'] = 0
         f_out.props['_SceneChangeNext'] = 0
-
         if in_luma_range:
             if mandatory_ref_1:
                 if ("tht_max" not in _last_sc_status) or above_distance_min:
@@ -317,10 +287,8 @@ def vs_edge_based_scenedetect(
 
 def enforce_min_scene_distance(clip: vs.VideoNode, min_distance: int = 10) -> vs.VideoNode:
     """Remove scene-change detections that are closer than min_distance frames apart.
-
     Iterates all frames, collects scene-change indices, applies a greedy filter keeping
     only detections separated by at least min_distance, then annotates the clip.
-
     :param clip:         Clip with _SceneChangePrev frame properties.
     :param min_distance: Minimum allowed gap between consecutive scene changes. Default 10.
     :return:             Clip with filtered _SceneChangePrev properties.
@@ -344,7 +312,6 @@ def enforce_min_scene_distance(clip: vs.VideoNode, min_distance: int = 10) -> vs
             last = n
 
     sc_set = set(filtered)
-
     def apply(n, f):
         fout = f.copy()
         if n in sc_set:
@@ -357,11 +324,9 @@ def enforce_min_scene_distance(clip: vs.VideoNode, min_distance: int = 10) -> vs
 
 class SceneDetectionFiltered:
     """Edge-based scene detection post-filter using SSIM and histogram distance.
-
     Shares the same SSIM/histogram filtering logic as SceneDetection.SceneDetectFilter
     but is tuned for the edge-based detection pipeline (reads sc_reason in addition to sc_luma).
     """
-
     _sc_debug: bool = None
     _sc_last_index = None
     _sc_last_ref = None
@@ -375,11 +340,9 @@ class SceneDetectionFiltered:
     _sc_tht_black = None
     _sc_prv_reason = None
     _sc_frequency = 0
-
     def __init__(self, sc_tht_white: float = DEF_THT_WHITE, sc_tht_black: float = DEF_THT_BLACK,
                  sc_frequency: int = 0, sc_debug: bool = False):
         """Initialise filtered scene detection state.
-
         :param sc_tht_white: Luma upper bound for valid scene changes. Default DEF_THT_WHITE.
         :param sc_tht_black: Luma lower bound for valid scene changes. Default DEF_THT_BLACK.
         :param sc_frequency: Minimum scene change frequency (frames). Default 0.
@@ -397,7 +360,6 @@ class SceneDetectionFiltered:
         self._sc_tht_white = sc_tht_white
         self._sc_tht_black = sc_tht_black
         self._sc_frequency = sc_frequency
-
         if self._sc_debug:
             vsutil.CMNET2_LogMessage(vsutil.MessageType.WARNING,
                                "sc_tht_black= ", sc_tht_black,
@@ -405,10 +367,8 @@ class SceneDetectionFiltered:
 
     def SceneDetectFilter(self, clip: vs.VideoNode, ssim_threshold: float = 0.55, min_length: int = 1) -> vs.VideoNode:
         """Post-filter scene changes using SSIM and histogram similarity (edge-based version).
-
         Processes the clip in batches of 5000 frames. Suppresses detections where SSIM
         indicates high similarity to the previous scene-change frame.
-
         :param clip:           Clip with candidate _SceneChangePrev flags and sc_luma/sc_reason props.
         :param ssim_threshold: SSIM threshold below which a detection is accepted. Default 0.55.
         :param min_length:     Minimum frame distance between accepted scene changes. Default 1.
@@ -416,9 +376,7 @@ class SceneDetectionFiltered:
         """
         t_step = 5000  # batch size for the SSIM filter (to avoid buffer memory problems)
         clip_length = clip.num_frames
-
         clip_list = []
-
         for i in range(0, clip_length, t_step):
             t_start = i
             t_end = min(t_start + t_step, clip_length)
@@ -432,7 +390,6 @@ class SceneDetectionFiltered:
     def _scene_detect_filter_task(self, t_start: int, clip: vs.VideoNode, tht_ssim: float = 0.55, min_length: int = 1
                                   ) -> vs.VideoNode:
         """Process one batch of frames for SSIM/histogram post-filtering (edge-based version).
-
         :param t_start:   Absolute frame offset of this batch.
         :param clip:      Batch clip with candidate _SceneChangePrev flags.
         :param tht_ssim:  SSIM threshold; below = scene change accepted. Default 0.55.
@@ -444,13 +401,11 @@ class SceneDetectionFiltered:
             fout = f.copy()
             f_luma: float = fout.props['sc_luma']
             f_reason: int = fout.props['sc_reason']
-
             np_frame = vsutil.frame_to_np_array(f)
             np_img = cv2.cvtColor(np_frame, cv2.COLOR_RGB2GRAY)
             y_img, _, _ = cv2.split(cv2.cvtColor(np_frame, cv2.COLOR_RGB2YUV))
             y_last = np_img
             t_n = t_start + n
-
             if t_n == 0:
                 self._sc_last_index = None
                 self._sc_prev_y = None
@@ -459,7 +414,6 @@ class SceneDetectionFiltered:
                 self._sc_prev_reason = 0
 
             is_scenechange = fout.props['_SceneChangePrev'] == 1 or t_n == 0
-
             if is_scenechange and self._sc_last_index is None:
                 fout.props['_SceneChangePrev'] = 1
                 fout.props['_SceneChangeNext'] = 0
@@ -478,7 +432,6 @@ class SceneDetectionFiltered:
                 return fout
 
             sc_reason = 0
-
             if is_scenechange and n > 0 and (t_n - self._sc_last_index) < min_length:
                 if min_length > 1 and n > 1 and self._sc_prev_luma >= DEF_THT_BLACK_MIN > f_luma:
                     if self._sc_debug:
@@ -492,7 +445,6 @@ class SceneDetectionFiltered:
                     sc_reason = 4
 
             y_hist = self._calc_histogram(y_img)
-
             if ssim_tht == 1:
                 ssim_score = 1
                 hist_score = 1
@@ -555,7 +507,6 @@ class SceneDetectionFiltered:
                                                        tht_white=self._sc_tht_white, tht_black=self._sc_tht_black,
                                                        min_length=min_length))
         """ 
-
         sc = clip.std.ModifyFrame(clips=[clip],
                                   selector=partial(set_scenechange, t_start=t_start, clip=clip, ssim_tht=tht_ssim,
                                                    tht_white=self._sc_tht_white, tht_black=self._sc_tht_black,
@@ -565,14 +516,12 @@ class SceneDetectionFiltered:
 
     def _calc_histogram(self, y_img: np.ndarray, bins: int = 256, normalize: bool = True) -> np.ndarray:
         """Compute a (normalised) histogram of a grayscale image channel.
-
         :param y_img:     2-D uint8 grayscale image array.
         :param bins:      Number of histogram bins. Default 256.
         :param normalize: If True, normalise the histogram to [0, 1]. Default True.
         :return:          1-D float array of length bins.
         """
         # Extract Luma channel from the frame image
-
         # Create the histogram with a bin for every rgb value
         ht = cv2.calcHist([y_img], [0], None, [bins], [0, 256])
         if normalize:

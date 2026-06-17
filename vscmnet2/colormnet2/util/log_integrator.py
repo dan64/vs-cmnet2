@@ -12,9 +12,7 @@ class Integrator:
         self.values = {}
         self.counts = {}
         self.hooks  = [] # List is used here to maintain insertion order
-
         self.logger = logger
-
         self.distributed = distributed
         self.local_rank = local_rank
         self.world_size = world_size
@@ -54,23 +52,19 @@ class Integrator:
 
     # Average and output the metrics
     def finalize(self, prefix, it, f=None):
-
         for hook in self.hooks:
             k, v = hook(self.values)
             self.add_tensor(k, v)
 
         for k, v in self.values.items():
-
             if k[:4] == 'hide':
                 continue
 
             avg = v / self.counts[k]
-
             if self.distributed:
                 # Inplace operation
                 avg = torch.tensor(avg).cuda()
                 torch.distributed.reduce(avg, dst=0)
-
                 if self.local_rank == 0:
                     avg = (avg/self.world_size).cpu().item()
                     self.logger.log_metrics(prefix, k, avg, it, f)

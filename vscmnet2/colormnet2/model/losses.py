@@ -27,19 +27,16 @@ def l1_loss(input, target):
 class BootstrappedCE(nn.Module):
     def __init__(self, start_warm, end_warm, top_p=0.15):
         super().__init__()
-
         self.start_warm = start_warm
         self.end_warm = end_warm
         self.top_p = top_p
 
     def forward(self, input, target, it):
         if it < self.start_warm:
-
             return F.cross_entropy(input, target), 1.0
 
         raw_loss = F.cross_entropy(input, target, reduction='none').view(-1)
         num_pixels = raw_loss.numel()
-
         if it > self.end_warm:
             this_p = self.top_p
         else:
@@ -56,9 +53,7 @@ class LossComputer:
 
     def compute(self, data, num_objects, it):
         losses = defaultdict(int)
-
         b, t = data['rgb'].shape[:2]
-
         losses['total_loss'] = 0
         for ti in range(1, t):
             for bi in range(b):
@@ -75,9 +70,7 @@ class LossComputer:
 
     def compute_l1loss(self, data, num_objects, it):
         losses = defaultdict(int)
-
         b, t = data['rgb'].shape[:2]
-
         losses['total_loss'] = 0
         for ti in range(1, t):
             for bi in range(b):

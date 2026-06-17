@@ -14,6 +14,8 @@ URL: https://github.com/dan64/cmnet2
 """
 from __future__ import annotations, print_function
 
+from typing import Tuple
+
 from .colormnet2_render import ColorMNetRender2
 from .colormnet2_utils import *
 from .colormnet2_server import ColorMNetServer2
@@ -37,7 +39,6 @@ def vs_colormnet2_local(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs.
                         max_memory_frames: int = 0, ref_weight: float = 1.0, sc_framedir: str = None,
                         retry_perm_share_threshold: float = 0.30, retry_model: int = 0) -> vs.VideoNode:
     vid_length = clip.num_frames
-
     # max_memory_frames here is the user's window_size; the colorizer's long-term memory stays large
     colorizer = ColorMNetRender2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
                                  encode_mode=1, max_memory_frames=DEF_MAX_MEMORY_FRAMES,
@@ -63,14 +64,11 @@ def _colormnet2_async(colorizer: ColorMNetRender2, clip: vs.VideoNode, clip_ref:
         reader.load_clip_ref(clip_ref, clip_sc, window_size=max_memory_frames)
     perm_mem_win = PermMemWindow(colorizer, reader, window_size=max_memory_frames)
     perm_mem_win.preload_initial()
-
     def colormnet_clip_color_merge(n, f, perm_mem_win: PermMemWindow, reader: RefImageReader2,
                                    colorizer: ColorMNetRender2 = None, propagate: bool = False,
                                    weight: float = 1.0) -> vs.VideoFrame:
-
         img_orig = frm_to_img(f[0])
         img_ref = frm_to_img(f[1])  # always same as video to merge, even if frame_as_video = False
-
         if n == 0:
             colorizer.set_ref_frame(reader.get_ref_image(0), propagate)
         else:
@@ -78,7 +76,6 @@ def _colormnet2_async(colorizer: ColorMNetRender2, clip: vs.VideoNode, clip_ref:
 
         perm_mem_win.adjust(n)
         img_color = colorizer.colorize_frame(ti=n, frame_i=img_orig)
-
         is_scenechange = f[2].props['_SceneChangePrev'] == 1
         if not is_scenechange:
             img_color_m = image_weighted_merge(img_color, img_ref, weight)
@@ -90,16 +87,13 @@ def _colormnet2_async(colorizer: ColorMNetRender2, clip: vs.VideoNode, clip_ref:
     def colormnet_clip_color(n, f, perm_mem_win: PermMemWindow, reader: RefImageReader2,
                              colorizer: ColorMNetRender2 = None, propagate: bool = False,
                              enable_retry: bool = False) -> vs.VideoFrame:
-
         img_orig = frm_to_img(f[0])
-
         if n == 0:
             colorizer.set_ref_frame(reader.get_ref_image(0), propagate)
         else:
             colorizer.set_ref_frame(None)
 
         perm_mem_win.adjust(n)
-
         if enable_retry:
             # In-process call: retry logic lives in ColorMNetRender2 itself.
             # No RPC overhead because we are running locally (encode_mode=1).
@@ -135,7 +129,6 @@ def vs_colormnet2_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs
                          retry_perm_share_threshold: float = 0.25, retry_model: int = 0,
                          server_port: int = 0) -> vs.VideoNode:
     vid_length = clip.num_frames
-
     server = ColorMNetServer2(server_port=server_port).run_server()
     # max_memory_frames here is the user's window_size; the colorizer's long-term memory stays large
     colorizer = ColorMNetClient2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
@@ -155,10 +148,75 @@ def vs_colormnet2_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs
     return clip_colored
 
 
+def vs_colormnet2_range(clip: vs.VideoNode, clip_ref: vs.VideoNode, frame_propagate: bool = False,
+                        render_vivid: bool = False,  max_memory_frames: int = 0,
+                        sc_framedir: str = None, ref_range: Tuple[int,int]| None = None,
+                        retry_perm_share_threshold: float = 0.25, retry_model: int = 0,
+                        server_port: int = 0) -> vs.VideoNode:
+    vid_length = clip.num_frames
+    clip_sc = None
+    image_size: int = -1
+    enable_resize: bool = False
+    ref_weight: float = 1.0
+    server = ColorMNetServer2(server_port=server_port).run_server()
+    # max_memory_frames here is the user's window_size; the colorizer's long-term memory stays large
+    colorizer = ColorMNetClient2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
+                                 encode_mode=0, max_memory_frames=DEF_MAX_MEMORY_FRAMES,
+                                 reset_on_ref_update=False, retry_perm_share_threshold=retry_perm_share_threshold,
+                                 retry_model=retry_model, server_port=server.get_port())
+
+    if not colorizer.is_initialized():
+        CMNET2_LogMessage(MessageType.EXCEPTION, "Failed to initialize ColorMNet[remote] try ColorMNet[local]")
+
+    clip_colored = _colormnet2_client_range(colorizer, clip, clip_ref, frame_propagate, ref_range,
+                                      max_memory_frames, sc_framedir, enable_retry=retry_perm_share_threshold > 0)
+
+    if render_vivid:
+        clip_colored = vs_tweak(clip_colored, hue=DEF_VIVID_HUE_LOW, sat=DEF_VIVID_SAT_LOW)
+
+    return clip_colored
+
+
+def _colormnet2_client_range(colorizer: ColorMNetClient2, clip: vs.VideoNode, clip_ref: vs.VideoNode,
+                       frame_propagate: bool = False, ref_merge: Tuple[int,int]|None = None,
+                       max_memory_frames: int = 0, sc_framedir: str = None, enable_retry:bool=False) -> vs.VideoNode:
+
+    reader: RefImageReader2 = RefImageReader2()
+    reader.load_from_dir(sc_framedir, target_size=(clip.width, clip.height))
+    perm_mem_win = PermMemWindow(colorizer, reader, window_size=max_memory_frames)
+    perm_mem_win.preload_initial_start(ref_merge[0])
+    
+    def colormnet_range_color(n, f, perm_mem_win: PermMemWindow, reader: RefImageReader2,
+                               colorizer: ColorMNetClient2 = None, ref_merge: Tuple[int,int]|None = None,
+                               enable_retry: bool = False, propagate: bool = False) -> vs.VideoFrame:
+        if n < ref_merge[0] or n > ref_merge[1]:
+            return f[0].copy()
+
+        img_orig = frm_to_img(f[0])
+        if n == 0:
+            colorizer.set_ref_frame(reader.get_ref_image(0), propagate)
+        else:
+            colorizer.set_ref_frame(None)
+
+        perm_mem_win.adjust(n)
+        if enable_retry:
+            # Single RPC call: server-side colorize + auto-retry.
+            img_color = colorizer.colorize_frame_with_retry(ti=n, frame_i=img_orig)
+        else:
+            img_color = colorizer.colorize_frame(ti=n, frame_i=img_orig)
+
+        return img_to_frm(img_color, f[0].copy())
+
+
+    clip_colored = clip.std.ModifyFrame(clips=[clip, clip_ref],
+                                        selector=partial(colormnet_range_color, perm_mem_win=perm_mem_win,
+                                                             reader=reader, colorizer=colorizer, ref_merge=ref_merge,
+                                                             enable_retry=enable_retry, propagate=frame_propagate))
+    return clip_colored
+
 def _colormnet2_client(colorizer: ColorMNetClient2, clip: vs.VideoNode, clip_ref: vs.VideoNode,
                        clip_sc: vs.VideoNode, frame_propagate: bool = False, ref_weight: float = 1.0,
                        max_memory_frames: int = 0, sc_framedir: str = None, enable_retry:bool=False) -> vs.VideoNode:
-
     reader: RefImageReader2 = RefImageReader2()
     if sc_framedir is not None:
         reader.load_from_dir(sc_framedir, target_size=(clip.width, clip.height))
@@ -166,14 +224,11 @@ def _colormnet2_client(colorizer: ColorMNetClient2, clip: vs.VideoNode, clip_ref
         reader.load_clip_ref(clip_ref, clip_sc, window_size=max_memory_frames)
     perm_mem_win = PermMemWindow(colorizer, reader, window_size=max_memory_frames)
     perm_mem_win.preload_initial()
-
     def colormnet_client_color_merge(n, f, perm_mem_win: PermMemWindow, reader: RefImageReader2,
                                      colorizer: ColorMNetClient2 = None,
                                      propagate: bool = False, weight: float = 1.0) -> vs.VideoFrame:
-
         img_orig = frm_to_img(f[0])
         img_ref = frm_to_img(f[1])  # always same as video to merge, even if frame_as_video = False
-
         if n == 0:
             colorizer.set_ref_frame(reader.get_ref_image(0), propagate)
         else:
@@ -181,7 +236,6 @@ def _colormnet2_client(colorizer: ColorMNetClient2, clip: vs.VideoNode, clip_ref
 
         perm_mem_win.adjust(n)
         img_color = colorizer.colorize_frame(ti=n, frame_i=img_orig)
-
         is_scenechange = f[2].props['_SceneChangePrev'] == 1
         if not is_scenechange:
             img_color_m = image_weighted_merge(img_color, img_ref, weight)
@@ -194,9 +248,7 @@ def _colormnet2_client(colorizer: ColorMNetClient2, clip: vs.VideoNode, clip_ref
     def colormnet_client_color(n, f, perm_mem_win: PermMemWindow, reader: RefImageReader2,
                                colorizer: ColorMNetClient2 = None, enable_retry: bool = False,
                                propagate: bool = False) -> vs.VideoFrame:
-
         img_orig = frm_to_img(f[0])
-
         if n == 0:
             colorizer.set_ref_frame(reader.get_ref_image(0), propagate)
         else:
@@ -233,15 +285,12 @@ def vs_colormnet2dit_local(clip: vs.VideoNode, clip_ref: vs.VideoNode,
                            max_memory_frames: int = 0, retry_perm_share_threshold: float = 0.0,
                            retry_model: int = 0) -> vs.VideoNode:
     """Local (in-process) CMNET2-DIT colorization.
-
     Identical to vs_colormnet2_local() except that reference frames are B&W
     and are colorized by dit_engine (CMNET2ditEngine) via PermMemWindowDit
     before being loaded into the CMNET2 permanent memory.
-
     sc_framedir is intentionally not supported: reference frames are always
     sourced from clip_ref (which, in HAVC_cmnet2dit, is the B&W input clip
     with scene-change props attached).
-
     :param clip:                        B&W source clip (RGB24).
     :param clip_ref:                    B&W clip providing reference frames and
                                         scene-change props (_SceneChangePrev).
@@ -262,7 +311,6 @@ def vs_colormnet2dit_local(clip: vs.VideoNode, clip_ref: vs.VideoNode,
     :return:                            Colourised clip (RGB24).
     """
     vid_length = clip.num_frames
-
     # The colorizer's internal long-term memory stays large; max_memory_frames
     # controls only the sliding window managed by PermMemWindowDit.
     colorizer = ColorMNetRender2(
@@ -290,11 +338,9 @@ def _colormnet2dit_async(colorizer: ColorMNetRender2, dit_engine,
                          frame_propagate: bool = False, max_memory_frames: int = 0) -> vs.VideoNode:
     """
     Local ModifyFrame loop for CMNET2-DIT (encode_mode=1).
-
     Sets up a PermMemWindowDit that colorizes B&W refs in pairs before preloading
     them into CMNET2 permanent memory. The ModifyFrame callback calls
     colorize_frame() for each output frame of the clip.
-
     Notes
     -----
     - ref-merge (ref_weight < 1) is intentionally not implemented in the DIT
@@ -305,14 +351,11 @@ def _colormnet2dit_async(colorizer: ColorMNetRender2, dit_engine,
     """
     reader: RefImageReader2 = RefImageReader2()
     reader.load_clip_ref(clip_ref, clip_sc=None, window_size=max_memory_frames)
-
     perm_mem_win = PermMemWindowDit(colorizer, reader, window_size=max_memory_frames, dit_engine=dit_engine)
     perm_mem_win.preload_initial()
-
     def colormnet_dit_color(n, f, perm_mem_win: PermMemWindowDit, colorizer: ColorMNetRender2 = None,
                             propagate: bool = False, enable_retry: bool = False) -> vs.VideoFrame:
         img_orig = frm_to_img(f[0])
-
         if n == 0:
             # Use the colorized ref[0] cached by preload_initial() to avoid
             # a redundant colorization call at frame zero.
@@ -321,7 +364,6 @@ def _colormnet2dit_async(colorizer: ColorMNetRender2, dit_engine,
             colorizer.set_ref_frame(None)
 
         perm_mem_win.adjust(n)
-
         if enable_retry:
             img_color = colorizer.colorize_frame_with_retry(ti=n, frame_i=img_orig)
         else:
@@ -350,11 +392,9 @@ def vs_colormnet2dit_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode,
                             max_memory_frames: int = 0, retry_perm_share_threshold: float = 0.0,
                             retry_model: int = 0, server_port: int = 0) -> vs.VideoNode:
     """Remote (XML-RPC subprocess) CMNET2-DIT colorization.
-
     Identical to vs_colormnet2_remote() except that reference frames are B&W
     and are colorized by dit_engine (CMNET2ditEngine) via PermMemWindowDit
     before being sent to the CMNET2 server.
-
     :param clip:                        B&W source clip (RGB24).
     :param clip_ref:                    B&W clip providing reference frames and
                                         scene-change props.
@@ -374,9 +414,7 @@ def vs_colormnet2dit_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode,
     :return:                            Colourised clip (RGB24).
     """
     vid_length = clip.num_frames
-
     server = ColorMNetServer2(server_port=server_port).run_server()
-
     colorizer = ColorMNetClient2(
         image_size=image_size,
         vid_length=vid_length,
@@ -407,7 +445,6 @@ def _colormnet2dit_client(colorizer: ColorMNetClient2, dit_engine,
                           frame_propagate: bool = False, max_memory_frames: int = 0) -> vs.VideoNode:
     """
     Remote ModifyFrame loop for CMNET2-DIT (encode_mode=0).
-
     Mirror of _colormnet2dit_async() for the XML-RPC client path.
     PermMemWindowDit colorizes B&W refs in pairs (on the VS-process side, via
     the CMNET2ditEngine RPC) then sends the colorized images to the CMNET2 server
@@ -415,23 +452,19 @@ def _colormnet2dit_client(colorizer: ColorMNetClient2, dit_engine,
     """
     reader: RefImageReader2 = RefImageReader2()
     reader.load_clip_ref(clip_ref, clip_sc=None, window_size=max_memory_frames)
-
     perm_mem_win = PermMemWindowDit(colorizer, reader, window_size=max_memory_frames, dit_engine=dit_engine)
     perm_mem_win.preload_initial()
-
     def colormnet_dit_client_color(n, f, perm_mem_win: PermMemWindowDit,
                                    colorizer: ColorMNetClient2 = None,
                                    propagate: bool = False,
                                    enable_retry:bool=False) -> vs.VideoFrame:
         img_orig = frm_to_img(f[0])
-
         if n == 0:
             colorizer.set_ref_frame(perm_mem_win.first_ref_colored, propagate)
         else:
             colorizer.set_ref_frame(None)
 
         perm_mem_win.adjust(n)
-
         if enable_retry:
             # Single RPC call: server-side colorize + auto-retry.
             img_color = colorizer.colorize_frame_with_retry(ti=n, frame_i=img_orig)

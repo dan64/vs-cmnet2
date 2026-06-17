@@ -39,7 +39,6 @@ class VideoReader_221128_TransColorization(Dataset):
         self.palette = Image.open(path.join(mask_dir, sorted([msk for msk in os.listdir(mask_dir) if not msk.startswith('.')])[0])).getpalette()
         self.first_gt_path = path.join(self.mask_dir, sorted([msk for msk in os.listdir(self.mask_dir) if not msk.startswith('.')])[0])
         self.suffix = self.first_gt_path.split('.')[-1]
-
         if size < 0:
             self.im_transform = transforms.Compose([
                 RGB2Lab(),
@@ -62,10 +61,8 @@ class VideoReader_221128_TransColorization(Dataset):
         info['frame'] = frame
         info['vid_name'] = self.vid_name
         info['save'] = (self.to_save is None) or (frame[:-4] in self.to_save)
-
         im_path = path.join(self.image_dir, frame)
         img = Image.open(im_path).convert('RGB')
-
         if self.image_dir == self.size_dir:
             shape = np.array(img).shape[:2]
         else:
@@ -74,16 +71,13 @@ class VideoReader_221128_TransColorization(Dataset):
             shape = np.array(size_im).shape[:2]
 
         gt_path = path.join(self.mask_dir, sorted(os.listdir(self.mask_dir))[idx]) if idx < len(os.listdir(self.mask_dir)) else None 
-
         img = self.im_transform(img)
         img_l = img[:1,:,:]
         img_lll = img_l.repeat(3,1,1)
-
         load_mask = (self.use_all_mask or (gt_path == self.first_gt_path)) and gt_path is not None
         if load_mask and path.exists(gt_path):
             mask = Image.open(gt_path).convert('RGB')
             mask = self.im_transform(mask)
-
             # keep L channel of reference image in case First frame is not exemplar
             # mask_ab = mask[1:3,:,:]
             # data['mask'] = mask_ab
@@ -93,7 +87,6 @@ class VideoReader_221128_TransColorization(Dataset):
         info['need_resize'] = not (self.size < 0)
         data['rgb'] = img_lll
         data['info'] = info
-
         return data
 
     def resize_mask(self, mask):

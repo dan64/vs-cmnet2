@@ -34,7 +34,6 @@ def get_render_size(orig_w: int, orig_h: int, render_speed: str = "medium") -> t
     Returns the original dimensions if max_side <= 0 or
     if the frame is already smaller than max_side.
     """
-
     if render_speed == "auto":
         ratio = orig_w/orig_h
         render_speed = "fast" if ratio < 1.6 else "medium"
@@ -65,7 +64,6 @@ def get_render_size(orig_w: int, orig_h: int, render_speed: str = "medium") -> t
 def resize_min_HW(clip: vs.VideoNode, min_size: tuple[int, int] = (512, 480)) -> vs.VideoNode:
     """
     Resize clip so that the max width/height is min_size while maintaining aspect ratio.
-
     Args:
         clip: Input clip
         min_size: Minimum HxW size, tuple(H,W)  (default: (512, 480))
@@ -73,7 +71,6 @@ def resize_min_HW(clip: vs.VideoNode, min_size: tuple[int, int] = (512, 480)) ->
     Returns:
         Resized clip with minium width/height is min_size (divisible by 2)
     """
-
     if clip.height < clip.width:
         if clip.height >  min_size[1]:
             return resize_to_height(clip, target_height=min_size[1])
@@ -89,7 +86,6 @@ def resize_to_height(clip: vs.VideoNode, target_height: int = 480) -> vs.VideoNo
     """
     Resize clip to target width while maintaining aspect ratio and ensuring
     height is divisible by 2 (required for many codecs and filters).
-
     Args:
         clip: Input clip
         target_height: Target height (default: 480)
@@ -99,21 +95,18 @@ def resize_to_height(clip: vs.VideoNode, target_height: int = 480) -> vs.VideoNo
     """
     # Calculate the proportional height
     target_width = round(clip.width * target_height / clip.height)
-
     # Ensure height is divisible by 2
     if target_width % 2 != 0:
         target_width -= 1  # or -= 1, but +1 is generally safer to avoid undersizing
 
     # Resize using spline resampling
     resized_clip = clip.resize.Spline36(width=target_width, height=target_height)
-
     return resized_clip
 
 def resize_to_width(clip: vs.VideoNode, target_width: int = 512) -> vs.VideoNode:
     """
     Resize clip to target width while maintaining aspect ratio and ensuring
     height is divisible by 2 (required for many codecs and filters).
-
     Args:
         clip: Input clip
         target_width: Target width (default: 512)
@@ -123,21 +116,18 @@ def resize_to_width(clip: vs.VideoNode, target_width: int = 512) -> vs.VideoNode
     """
     # Calculate the proportional height
     target_height = round(clip.height * target_width / clip.width)
-
     # Ensure height is divisible by 2
     if target_height % 2 != 0:
         target_height += 1  # or -= 1, but +1 is generally safer to avoid undersizing
 
     # Resize using spline resampling
     resized_clip = clip.resize.Spline36(width=target_width, height=target_height)
-
     return resized_clip
 
 def resize_to_chroma(clip_highres: vs.VideoNode, clip_lowres: vs.VideoNode) -> vs.VideoNode:
     """
         Perform a chroma Resize. The lowres clip will be resized to highres and the Y plane of clip_lowres
         will be replaced by the Y plane of highres clip.
-
         Args:
             clip_highres: Input highres clip with original plane Y
             clip_lowres: Input lowres clip to apply the chroma resize
@@ -155,7 +145,6 @@ def resize_to_chroma(clip_highres: vs.VideoNode, clip_lowres: vs.VideoNode) -> v
     clip_color = clip_resized.resize.Bicubic(format=vs.YUV420P8, matrix_s="709", range_s="full")
     # restore orginal Y plane
     clip_yuv = vs.core.std.ShufflePlanes(clips=[clip_bw, clip_color, clip_color], planes=[0, 1, 2], colorfamily=vs.YUV)
-
     clip_yuv = clip_yuv.std.CopyFrameProps(prop_src=clip_color, props=['_SceneChangePrev', '_SceneChangeNext',
                                                            'sc_threshold', 'sc_frequency', 'sc_luma', 'sc_ratio'])
     # convert result to RGB24
@@ -196,10 +185,8 @@ class ClipPadder:
     A class to pad a VapourSynth RGB clip to 512x512 and later restore it.
     Stores all necessary metadata internally.
     """
-
     def __init__(self, clip_width_size: int = DEF_MAX_RESIZE):
         """Initialise the padder.
-
         :param clip_width_size: Target square size (pixels) for the padded clip. Default DEF_MAX_RESIZE.
         """
         self.clip_width_size: int = clip_width_size
@@ -223,16 +210,13 @@ class ClipPadder:
         w, h = clip.width, clip.height
         self._original_width = w
         self._original_height = h
-
         # Fit to 512x512 box (preserve aspect ratio)
         scale = self.clip_width_size / max(w, h)
         new_w = int(w * scale)
         new_h = int(h * scale)
         self._scale = scale
-
         # Resize
         resized = vs.core.resize.Lanczos(clip, width=new_w, height=new_h)
-
         # Compute symmetric padding
         pad_w = self.clip_width_size - new_w
         pad_h = self.clip_width_size - new_h
@@ -240,7 +224,6 @@ class ClipPadder:
         self._pad_right = pad_w - self._pad_left
         self._pad_top = pad_h // 2
         self._pad_bottom = pad_h - self._pad_top
-
         # Pad with neutral gray (128, 128, 128)
         padded = vs.core.std.AddBorders(
             resized,
@@ -250,7 +233,6 @@ class ClipPadder:
             bottom=self._pad_bottom,
             color=[128, 128, 128]
         )
-
         self._is_padded = True
         return padded
 
@@ -273,14 +255,12 @@ class ClipPadder:
             right=self._pad_right,
             bottom=self._pad_bottom
         )
-
         # Resize back to original resolution
         restored = vs.core.resize.Lanczos(
             cropped,
             width=self._original_width,
             height=self._original_height
         )
-
         return restored
 
     # Optional: expose metadata (read-only)
@@ -310,16 +290,13 @@ Class for resize clips in 16/9 aspect ratio, borders are added if needed
 
 class SmartResizeColorizer:
     """Singleton that pads a colorizer input clip to the target 16:9 aspect ratio and later restores it.
-
     Adds symmetric borders to match the aspect ratio of the exemplar model's expected input size,
     resizes to the target dimensions, then provides restore_clip_size to reverse the operation.
     Only effective for ex_model in (0, 1, 3); other models are passed through unchanged.
     """
-
     _instance = None
     _initialized: bool = False
     ex_model: int = None
-
     def __new__(cls, *args, **kwargs):
         """Singleton constructor — returns the existing instance if already created."""
         if cls._instance is None:
@@ -328,7 +305,6 @@ class SmartResizeColorizer:
 
     def __init__(self, clip_size: list = [432, 768], ex_model: int = 1):
         """Initialise target size and model type (only applied once due to singleton pattern).
-
         :param clip_size: Target inference dimensions [H, W]. Default [432, 768].
         :param ex_model:  Exemplar model ID; 0=CMNET2, 1=DeepEx, 3=ColorMNet. Default 1.
         """
@@ -346,7 +322,6 @@ class SmartResizeColorizer:
 
     def get_resized_clip(self, clip: vs.VideoNode) -> vs.VideoNode:
         """Pad the clip to the target aspect ratio and resize to target dimensions.
-
         :param clip: RGB24 input clip.
         :return:     Padded and resized clip at target_width × target_height.
         """
@@ -374,7 +349,6 @@ class SmartResizeColorizer:
 
     def restore_clip_size(self, clip: vs.VideoNode = None):
         """Resize and crop the clip back to its original dimensions.
-
         :param clip: Processed clip at target_width × target_height.
         :return:     Clip at the original (pre-padding) dimensions.
         """
@@ -392,7 +366,6 @@ class SmartResizeColorizer:
 
     def clip_chroma_resize(self, clip_highres: vs.VideoNode, clip_lowres: vs.VideoNode) -> vs.VideoNode:
         """Restore clip_lowres to original size and perform a chroma resize with clip_highres's luma.
-
         :param clip_highres: Original high-resolution clip (source of Y plane).
         :param clip_lowres:  Colourised low-resolution clip (source of U/V planes).
         :return:             RGB24 clip with original luma and colourised chroma.
@@ -408,15 +381,12 @@ class SmartResizeColorizer:
 
 class SmartResizeReference:
     """Singleton that pads a reference clip to the target 16:9 aspect ratio and later restores it.
-
     Same pattern as SmartResizeColorizer but ensures padding values are multiples of 2
     to maintain chroma subsampling alignment for the reference frames.
     """
-
     _instance = None
     _initialized: bool = False
     ex_model: int = None
-
     def __new__(cls, *args, **kwargs):
         """Singleton constructor — returns the existing instance if already created."""
         if cls._instance is None:
@@ -425,7 +395,6 @@ class SmartResizeReference:
 
     def __init__(self, clip_size: list = [432, 768], ex_model: int = 1):
         """Initialise target size and model type (only applied once due to singleton pattern).
-
         :param clip_size: Target inference dimensions [H, W]. Default [432, 768].
         :param ex_model:  Exemplar model ID; 0=CMNET2, 1=DeepEx, 3=ColorMNet. Default 1.
         """
@@ -443,9 +412,7 @@ class SmartResizeReference:
 
     def get_resized_clip(self, clip: vs.VideoNode) -> vs.VideoNode:
         """Pad the reference clip to the target aspect ratio and resize to target dimensions.
-
         Padding values are rounded to multiples of 2 for chroma alignment.
-
         :param clip: RGB24 reference clip.
         :return:     Padded and resized reference clip at target_width × target_height.
         """
@@ -476,7 +443,6 @@ class SmartResizeReference:
 
     def restore_clip_size(self, clip: vs.VideoNode = None):
         """Resize and crop the reference clip back to its original dimensions.
-
         :param clip: Processed clip at target_width × target_height.
         :return:     Reference clip at original (pre-padding) dimensions.
         """
@@ -494,7 +460,6 @@ class SmartResizeReference:
 
     def clip_chroma_resize(self, clip_highres: vs.VideoNode, clip_lowres: vs.VideoNode) -> vs.VideoNode:
         """Restore clip_lowres to original size and perform a chroma resize with clip_highres's luma.
-
         :param clip_highres: Original high-resolution reference clip (source of Y plane).
         :param clip_lowres:  Colourised low-resolution clip (source of U/V planes).
         :return:             RGB24 clip with original luma and colourised chroma.

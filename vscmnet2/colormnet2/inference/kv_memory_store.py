@@ -6,7 +6,6 @@ class KeyValueMemoryStore:
     Works for key/value pairs type storage
     e.g., working and long-term memory
     """
-
     """
     An object group is created when new objects enter the video
     Objects in the same group share the same temporal extent
@@ -14,10 +13,8 @@ class KeyValueMemoryStore:
     For DAVIS/interactive, there is only one object group
     For YouTubeVOS, there can be multiple object groups
     """
-
     def __init__(self, count_usage: bool):
         self.count_usage = count_usage
-
         # keys are stored in a single tensor and are shared between groups/objects
         # values are stored as a list indexed by object groups
         self.k = None
@@ -25,10 +22,8 @@ class KeyValueMemoryStore:
         self.obj_groups = []
         # for debugging only
         self.all_objects = []
-
         # shrinkage and selection are also single tensors
         self.s = self.e = None
-
         # usage
         if self.count_usage:
             self.use_count = self.life_count = None
@@ -36,7 +31,6 @@ class KeyValueMemoryStore:
     def add(self, key, value, shrinkage, selection, objects: List[int]):
         new_count = torch.zeros((key.shape[0], 1, key.shape[2]), device=key.device, dtype=torch.float32)
         new_life = torch.zeros((key.shape[0], 1, key.shape[2]), device=key.device, dtype=torch.float32) + 1e-7
-
         # add the key
         if self.k is None:
             self.k = key
@@ -75,7 +69,6 @@ class KeyValueMemoryStore:
                 self.v.append(value[new_group])
                 self.obj_groups.append(new_group)
                 self.all_objects.extend(new_group)
-                
                 assert sorted(self.all_objects) == self.all_objects, 'Objects MUST be inserted in sorted order '
         else:
             # When objects is not given, v is a list that already has the object groups sorted
@@ -103,7 +96,6 @@ class KeyValueMemoryStore:
         # i.e., concat (a[:start], a[end:])
         # min_size is only used for values, we do not sieve values under this size
         # (because they are not consolidated)
-
         if end == 0:
             # negative 0 would not work as the end index!
             self.k = self.k[:,:,:start]
@@ -136,7 +128,6 @@ class KeyValueMemoryStore:
 
     def remove_obsolete_features(self, max_size: int):
         # normalize with life duration
-
         if self.use_count is None or self.life_count is None:
             return
 
@@ -144,15 +135,12 @@ class KeyValueMemoryStore:
             return
 
         usage = self.get_usage().flatten()
-
         k = self.size-max_size
-
         if not isinstance(k, (int, float)):
             return
 
         values, _ = torch.topk(usage, k=(self.size-max_size), largest=False, sorted=True)
         survived = (usage > values[-1])
-
         self.k = self.k[:, :, survived]
         self.s = self.s[:, :, survived] if self.s is not None else None
         # Long-term memory does not store ek so this should not be needed
@@ -181,7 +169,6 @@ class KeyValueMemoryStore:
 
     def get_all_sliced(self, start: int, end: int):
         # return k, sk, ek, usage in order, sliced by start and end
-
         if end == 0:
             # negative 0 would not work as the end index!
             k = self.k[:,:,start:]

@@ -27,7 +27,6 @@ def vs_colormnet2(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs.VideoN
                   sc_framedir: str = None, retry_perm_share_threshold: float = 0.25,
                   retry_model: int = 1) -> vs.VideoNode:
     """Colorize a clip using CMNET2 (exemplar-based, sliding permanent-memory).
-
     :param clip:               B&W source clip (RGB24).
     :param clip_ref:           Coloured reference clip carrying scene-change frame props.
     :param clip_sc:            Auxiliary clip for ref-merge scene detection (may be None).
@@ -49,7 +48,6 @@ def vs_colormnet2(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs.VideoN
     if max_memory_frames is None or max_memory_frames == 0:
         max_memory_frames = DEF_XRF_WINDOW_SIZE
     max_memory_frames = max(2, math.trunc(max_memory_frames / 2) * 2)
-
     match encode_mode:
         case 0:
             return vs_colormnet2_remote(clip, clip_ref, clip_sc, image_size, enable_resize, frame_propagate,
@@ -90,13 +88,11 @@ def vs_colormnet2dit(clip: vs.VideoNode, clip_ref: vs.VideoNode,
                      encode_mode: int = 0, retry_perm_share_threshold: float = 0.0,
                      retry_model: int = 0) -> vs.VideoNode:
     """Colorize a clip using CMNET2-DIT with a sliding permanent-memory window.
-
     DIT variant of vs_colormnet2(): reference frames are treated as B&W and
     colorized by CMNET2ditEngine (a DiT-based model via RPC) before being loaded
     into CMNET2 permanent memory.  Colorization always runs in pairs to exploit
     CMNET2ditEngine.colorize_image_pair(); a single colorize_image() call handles
     any odd leftover at the end of the reference list.
-
     :param clip:                        B&W source clip (RGB24).
     :param clip_ref:                    B&W clip carrying scene-change props and
                                         reference frames.  In HAVC_cmnet2dit this
@@ -129,13 +125,11 @@ def vs_colormnet2dit(clip: vs.VideoNode, clip_ref: vs.VideoNode,
     if max_memory_frames is None or max_memory_frames == 0:
         max_memory_frames = DEF_XRF_WINDOW_SIZE
     max_memory_frames = max(2, math.trunc(max_memory_frames / 2) * 2)
-
     engine_params = dict(_DEF_DIT_ENGINE_PARAMS)
     if dit_engine_params:
         engine_params.update(dit_engine_params)
 
     dit_engine = CMNET2ditEngine(**engine_params)
-
     match encode_mode:
         case 0:
             return vs_colormnet2dit_remote(

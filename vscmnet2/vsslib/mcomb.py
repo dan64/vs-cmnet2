@@ -37,11 +37,9 @@ function to build the refrence image used for the inference by DeepEx
 
 def vs_ext_reference_clip(clip: vs.VideoNode, sc_framedir: str = None, clip_resize: bool = False) -> vs.VideoNode:
     """Build a reference clip from images stored in sc_framedir for exemplar-based models.
-
     At scene-change frames the corresponding image (named ref_NNNNNN.ext) is read
     from sc_framedir and injected into the clip; other frames pass through unchanged.
     Optionally resizes the input clip to match the reference image dimensions.
-
     :param clip:        B&W or coloured RGB24 input clip carrying scene-change frame props.
     :param sc_framedir: Path to the directory containing reference image files.
     :param clip_resize: If True, resize the clip to match the first reference image size.
@@ -51,12 +49,10 @@ def vs_ext_reference_clip(clip: vs.VideoNode, sc_framedir: str = None, clip_resi
         CMNET2_LogMessage(MessageType.EXCEPTION, "vs_ext_reference_clip(): frames path '", sc_framedir, "' is invalid")
 
     ref_images = get_ref_images(sc_framedir)
-
     if not ref_images:
         CMNET2_LogMessage(MessageType.EXCEPTION, "vs_ext_reference_clip(): no reference images found in '",
                         sc_framedir, "'")
     ref_images.sort()
-
     f_size = (clip.width, clip.height)
     if clip_resize:
         # resize the clip to the same size of first reference image
@@ -71,12 +67,9 @@ def vs_ext_reference_clip(clip: vs.VideoNode, sc_framedir: str = None, clip_resi
                 CMNET2_LogMessage(MessageType.WARNING, "Error reading reference frame: ", img_path, " -> ", error)
 
     def set_clip_frame(n, f, img_list: list = None, f_size: Tuple[int, int] = None):
-
         f_out = f.copy()
         is_scenechange = (n == 0) or (f.props['_SceneChangePrev'] == 1)
-
         f_out.props['_SceneChangePrev'] = 0   # set scene-change detection OFF by default
-
         if not is_scenechange:
             return f_out
 
@@ -107,10 +100,8 @@ def vs_ext_reference_clip(clip: vs.VideoNode, sc_framedir: str = None, clip_resi
         return image_to_frame(ref_img, f.copy())
 
     clip_ref = clip.std.ModifyFrame(clips=[clip], selector=partial(set_clip_frame, img_list=ref_images, f_size=f_size))
-
     #clip_ref = debug_ModifyFrame(50, 80, clip, clips=[clip],
     #                             selector=partial(set_clip_frame, img_list=ref_images, f_size=f_size))
-
     return clip_ref
 
 
@@ -129,7 +120,6 @@ def vs_combine_models(clip_a: vs.VideoNode = None, clip_b: vs.VideoNode = None, 
                       ALM_p: list = DEF_ALM_p, CRT_p: list = DEF_CRT_p,
                       invert_clips: bool = False) -> vs.VideoNode:
     """Combine DeOldify (clip_a) and DDColor (clip_b) clips using the selected merge method.
-
     Convenience wrapper around vs_sc_combine_models with scenechange=False (all frames
     are processed). See vs_sc_combine_models for full parameter documentation.
     """
@@ -142,11 +132,9 @@ def vs_sc_combine_models(clip_a: vs.VideoNode = None, clip_b: vs.VideoNode = Non
                       ALM_p: list = DEF_ALM_p, CRT_p: list = DEF_CRT_p, invert_clips: bool = False,
                       scenechange: bool = True) -> vs.VideoNode:
     """Combine DeOldify (clip_a) and DDColor (clip_b) using one of 6 merge strategies.
-
     Applies per-clip sat/hue tweaks before merging. Dispatches to the appropriate
     merge function based on method (2–7). With scenechange=True only scene-change
     frames are processed.
-
     :param clip_a:       Stable reference clip (e.g. DeOldify). RGB24.
     :param clip_b:       Colourful clip (e.g. DDColor). RGB24.
     :param method:       Merge method: 2=Simple, 3=ConstrainedChroma, 4=LumaMasked,
@@ -163,7 +151,6 @@ def vs_sc_combine_models(clip_a: vs.VideoNode = None, clip_b: vs.VideoNode = Non
     :return:             Merged RGB24 clip.
     """
     # vs.core.log_message(2, "combine_models: method=" + str(method) + ", clipa = " + str(clipa) + ", clipb = " + str(clipb))
-
     # unpack combine_params
     chroma_threshold = CMC_p[0]
     if len(CMC_p) > 1:
@@ -186,7 +173,6 @@ def vs_sc_combine_models(clip_a: vs.VideoNode = None, clip_b: vs.VideoNode = Non
     crt_resize = CRT_p[3]
     crt_mask_weight = CRT_p[4]
     crt_algo = CRT_p[5]
-
     if invert_clips:
         clipa = clip_b
         clipb = clip_a
@@ -242,7 +228,6 @@ represent the weight assigned to the colors provided by ddcolor()
 def SimpleMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, clipb_weight: float = 0.5,
                   scenechange: bool = False) -> vs.VideoNode:
     """Merge two clips with a fixed per-frame weighted blend.
-
     :param clipa:        Base clip (e.g. DeOldify). RGB24.
     :param clipb:        Overlay clip (e.g. DDColor). RGB24.
     :param clipb_weight: Weight assigned to clipb [0, 1]. Default 0.5.
@@ -250,7 +235,6 @@ def SimpleMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, clipb_we
     :return:             Merged RGB24 clip.
     """
     def merge_frame(n, f, weight: float = 0.5, scenechange: bool = True):
-
         if scenechange:
             is_scenechange = (n == 0) or (f[0].props['_SceneChangePrev'] == 1)
             if not is_scenechange:
@@ -283,10 +267,8 @@ def LumaMaskedMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, luma
                     luma_white_limit: float = 0.7, luma_mask_sat=1.0, clipm_weight: float = 0.5,
                     scenechange: bool = False) -> vs.VideoNode:
     """Merge two clips using a luma-based mask: dark pixels use clipa, bright pixels use clipb.
-
     A gradient mask is built from luma_mask_limit to luma_white_limit. Optionally the
     masked result is blended back with clipa at clipm_weight.
-
     :param clipa:           Base clip (dark-pixel source). RGB24.
     :param clipb:           Overlay clip (bright-pixel source). RGB24.
     :param luma_mask_limit: Luma below which clipa is used (fraction [0, 1]). Default 0.4.
@@ -303,7 +285,6 @@ def LumaMaskedMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, luma
         clipc = clipa
 
     def merge_frame(n, f, weight: float, luma_limit: float, white_limit: float, scenechange: bool):
-
         if scenechange:
             is_scenechange = (n == 0) or (f[0].props['_SceneChangePrev'] == 1)
             if not is_scenechange:
@@ -348,10 +329,8 @@ def AdaptiveLumaMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, lu
                       alpha: float = 1.0, clipb_weight: float = 0.5, min_weight: float = 0.15,
                       scenechange: bool = False) -> vs.VideoNode:
     """Merge two clips with a clipb weight that decreases for dark frames.
-
     ``w = max(clipb_weight * (luma / luma_threshold)^alpha, min_weight)``
     when frame luma < luma_threshold; otherwise w = clipb_weight.
-
     :param clipa:           Base clip (e.g. DeOldify). RGB24.
     :param clipb:           Overlay clip (e.g. DDColor). RGB24.
     :param luma_threshold:  Luma level below which weight starts decreasing [0, 1]. Default 0.6.
@@ -362,7 +341,6 @@ def AdaptiveLumaMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = None, lu
     :return:                Merged RGB24 clip.
     """
     def merge_frame(n, f, luma_limit: float, min_w: float, alpha: float, weight: float, scenechange: bool):
-
         if scenechange:
             is_scenechange = (n == 0) or (f[0].props['_SceneChangePrev'] == 1)
             if not is_scenechange:
@@ -406,10 +384,8 @@ def ConstrainedChromaMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = Non
                            chroma_threshold: float = 0.2, red_fix: bool = True,
                            scenechange: bool = False) -> vs.VideoNode:
     """Merge two clips by limiting clipb's chroma to ±chroma_threshold of clipa's chroma.
-
     Uses chroma_stabilizer to constrain U/V channel differences. Optionally applies a
     red-shift correction on dark frames (luma < 0.3) to avoid reddish artefacts.
-
     :param clipa:             Stable reference clip (e.g. DeOldify). RGB24.
     :param clipb:             Colourful clip (e.g. DDColor). RGB24.
     :param clipb_weight:      Final blend weight of constrained clipb [0, 1]. Default 0.5.
@@ -419,7 +395,6 @@ def ConstrainedChromaMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = Non
     :return:                  Merged RGB24 clip.
     """
     def merge_frame(n, f, level: float, redfix: bool, weight: float, scenechange: bool):
-
         if scenechange:
             is_scenechange = (n == 0) or (f[0].props['_SceneChangePrev'] == 1)
             if not is_scenechange:
@@ -428,7 +403,6 @@ def ConstrainedChromaMerge(clipa: vs.VideoNode = None, clipb: vs.VideoNode = Non
         img1 = frame_to_image(f[0])
         img2 = frame_to_image(f[1])
         img_stab = chroma_stabilizer(img1, img2, level, weight)
-
         if not redfix:
             return image_to_frame(img_stab, f[0].copy())
 
@@ -465,7 +439,6 @@ def ChromaBoundAdaptiveMerge(
     Adaptive version of Constrained-Chroma. In this version the chroma tolerance is adaptive, i.e., it is applied an
     approach that will allow more color variation in textured/complex regions and less in smooth areas.
     The texture strength is computed via Laplacian.
-
     Args:
         clipa: vs.VideoNode,  # Stable reference (e.g., DeOldify as RGB)
         clipb: vs.VideoNode,  # New colorized clip
@@ -478,7 +451,6 @@ def ChromaBoundAdaptiveMerge(
     def merge_frame(n: int, f: list[vs.VideoFrame],
                     redfix: bool, base_tol: int, max_extra: int,
                     weight: float, scenechange: bool) -> vs.VideoFrame:
-
         if scenechange:
             is_scenechange = (n == 0) or (f[0].props.get('_SceneChangePrev', 0) == 1)
             if not is_scenechange:
@@ -487,7 +459,6 @@ def ChromaBoundAdaptiveMerge(
         img1 = frame_to_image(f[0])  # clipa
         img2 = frame_to_image(f[1])  # clipb
         img_stab = chroma_stabilizer_adaptive(img1, img2, base_tol=base_tol, max_extra=max_extra, weight=weight)
-
         if not redfix:
             return image_to_frame(img_stab, f[0].copy())
 
@@ -518,7 +489,6 @@ def ChromaBoundAdaptiveMerge(
 
     #clipm = debug_ModifyFrame(f_start = 6060, f_end = 90300, clip = clipa, clips = [clipa, clipb],
     #                          selector = partial(merge_frame, base_tol=base_tol, max_extra=max_extra, weight=clipb_weight, scenechange=scenechange))
-
     return clipm
 
 """
@@ -560,9 +530,7 @@ def ChromaRetentionMerge(clip_a: vs.VideoNode = None, clip_b: vs.VideoNode = Non
                                   [1] = Linear decay
                                   [2] = Exponential decay
     """
-
     alpha = max(min(alpha, DEF_MAX_COLOR_ALPHA), DEF_MIN_COLOR_ALPHA)
-
     clip_luma = clip_a
     if chroma_resize and not return_mask:
         rf = min(max(math.trunc(0.4 * clip_luma.width / 16), 16), 48)

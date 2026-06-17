@@ -11,7 +11,7 @@ Description:
 Constants for vs-cmnet2 functions.
 """
 DEF_CONNECT_TIMEOUT: int = 5
-DEF_CALL_TIMEOUT: int = 180
+DEF_CALL_TIMEOUT: int = 300
 DEF_LEVEL_NONE: int = 0
 DEF_LEVEL_INFO: int = 1
 DEF_LEVEL_DEBUG: int = 2
