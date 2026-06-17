@@ -148,16 +148,14 @@ def vs_colormnet2_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs
     return clip_colored
 
 
-def vs_colormnet2_range(clip: vs.VideoNode, clip_ref: vs.VideoNode, frame_propagate: bool = False,
-                        render_vivid: bool = False,  max_memory_frames: int = 0,
-                        sc_framedir: str = None, ref_range: Tuple[int,int]| None = None,
-                        retry_perm_share_threshold: float = 0.25, retry_model: int = 0,
-                        server_port: int = 0) -> vs.VideoNode:
+def vs_colormnet2_range(clip: vs.VideoNode, clip_ref: vs.VideoNode|None, frame_propagate: bool = False,
+                        render_vivid: bool = False,  max_memory_frames: int = 0, sc_framedir: str = None,
+                        ref_range: Tuple[int,int]| None = None,  retry_perm_share_threshold: float = 0.25,
+                        retry_model: int = 0, frame_offset: int = 0, server_port: int = 0) -> vs.VideoNode:
     vid_length = clip.num_frames
-    clip_sc = None
     image_size: int = -1
     enable_resize: bool = False
-    ref_weight: float = 1.0
+
     server = ColorMNetServer2(server_port=server_port).run_server()
     # max_memory_frames here is the user's window_size; the colorizer's long-term memory stays large
     colorizer = ColorMNetClient2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
@@ -168,8 +166,8 @@ def vs_colormnet2_range(clip: vs.VideoNode, clip_ref: vs.VideoNode, frame_propag
     if not colorizer.is_initialized():
         CMNET2_LogMessage(MessageType.EXCEPTION, "Failed to initialize ColorMNet[remote] try ColorMNet[local]")
 
-    clip_colored = _colormnet2_client_range(colorizer, clip, clip_ref, frame_propagate, ref_range,
-                                      max_memory_frames, sc_framedir, enable_retry=retry_perm_share_threshold > 0)
+    clip_colored = _colormnet2_client_range(colorizer, clip, frame_propagate, ref_range, max_memory_frames, sc_framedir,
+                                            enable_retry=retry_perm_share_threshold > 0, frame_offset=frame_offset)
 
     if render_vivid:
         clip_colored = vs_tweak(clip_colored, hue=DEF_VIVID_HUE_LOW, sat=DEF_VIVID_SAT_LOW)
@@ -177,41 +175,44 @@ def vs_colormnet2_range(clip: vs.VideoNode, clip_ref: vs.VideoNode, frame_propag
     return clip_colored
 
 
-def _colormnet2_client_range(colorizer: ColorMNetClient2, clip: vs.VideoNode, clip_ref: vs.VideoNode,
-                       frame_propagate: bool = False, ref_merge: Tuple[int,int]|None = None,
-                       max_memory_frames: int = 0, sc_framedir: str = None, enable_retry:bool=False) -> vs.VideoNode:
+def _colormnet2_client_range(colorizer: ColorMNetClient2, clip: vs.VideoNode,  frame_propagate: bool = False,
+                             ref_range: Tuple[int,int]|None = None, max_memory_frames: int = 0, sc_framedir: str = None,
+                             enable_retry:bool=False, frame_offset: int = 0) -> vs.VideoNode:
 
     reader: RefImageReader2 = RefImageReader2()
     reader.load_from_dir(sc_framedir, target_size=(clip.width, clip.height))
     perm_mem_win = PermMemWindow(colorizer, reader, window_size=max_memory_frames)
-    perm_mem_win.preload_initial_start(ref_merge[0])
+    perm_mem_win.preload_initial_start(ref_range[0])
     
     def colormnet_range_color(n, f, perm_mem_win: PermMemWindow, reader: RefImageReader2,
-                               colorizer: ColorMNetClient2 = None, ref_merge: Tuple[int,int]|None = None,
-                               enable_retry: bool = False, propagate: bool = False) -> vs.VideoFrame:
-        if n < ref_merge[0] or n > ref_merge[1]:
-            return f[0].copy()
+                               colorizer: ColorMNetClient2 = None, ref_range: Tuple[int,int]|None = None,
+                               enable_retry: bool = False, propagate: bool = False,
+                               frame_offset: int = 0) -> vs.VideoFrame:
 
-        img_orig = frm_to_img(f[0])
-        if n == 0:
+        if (n + frame_offset) < ref_range[0] or (n + frame_offset) > ref_range[1]:
+            return f.copy()
+
+        img_orig = frm_to_img(f)
+        if (n + frame_offset) == ref_range[0]:
             colorizer.set_ref_frame(reader.get_ref_image(0), propagate)
         else:
             colorizer.set_ref_frame(None)
 
-        perm_mem_win.adjust(n)
+        perm_mem_win.adjust(n + frame_offset)
         if enable_retry:
             # Single RPC call: server-side colorize + auto-retry.
             img_color = colorizer.colorize_frame_with_retry(ti=n, frame_i=img_orig)
         else:
             img_color = colorizer.colorize_frame(ti=n, frame_i=img_orig)
 
-        return img_to_frm(img_color, f[0].copy())
+        return img_to_frm(img_color, f.copy())
 
 
-    clip_colored = clip.std.ModifyFrame(clips=[clip, clip_ref],
+    clip_colored = clip.std.ModifyFrame(clips=clip,
                                         selector=partial(colormnet_range_color, perm_mem_win=perm_mem_win,
-                                                             reader=reader, colorizer=colorizer, ref_merge=ref_merge,
-                                                             enable_retry=enable_retry, propagate=frame_propagate))
+                                                             reader=reader, colorizer=colorizer, ref_range=ref_range,
+                                                             enable_retry=enable_retry, propagate=frame_propagate,
+                                                             frame_offset=frame_offset))
     return clip_colored
 
 def _colormnet2_client(colorizer: ColorMNetClient2, clip: vs.VideoNode, clip_ref: vs.VideoNode,

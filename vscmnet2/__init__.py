@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import os
 
-from vscmnet2.colormnet2 import vs_colormnet2_remote
-from vscmnet2.vsslib.constants import DEF_XRF_WINDOW_SIZE
+from .colormnet2 import vs_colormnet2_remote
+from .vsslib.constants import DEF_XRF_WINDOW_SIZE
 
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 os.environ["NUMEXPR_MAX_THREADS"] = "8"
@@ -44,7 +44,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 import warnings
 import logging
@@ -324,7 +324,6 @@ def vs_cmnet2_recolor(clip: vs.VideoNode = None, method: int = 4, render_speed: 
     if not torch.cuda.is_available():
         CMNET2_LogMessage(MessageType.EXCEPTION, "vs_cmnet2_recolor: CUDA is not available")
 
-    clip, orig_fmt = convert_format_RGB24(clip)
     if method not in (3, 4):
         CMNET2_LogMessage(MessageType.EXCEPTION, "vs_cmnet2_recolor: method must be in range [3-4]")
 
@@ -345,30 +344,44 @@ def vs_cmnet2_recolor(clip: vs.VideoNode = None, method: int = 4, render_speed: 
     if torch_dir is not None:
         torch.hub.set_dir(torch_dir)
 
-    ref_range = (ref_start, ref_end)
-    ref_frame_ext = (method == 4)
-    merge_ref_frame = False
-    clip = SceneDetectFromDir(clip, sc_framedir=ref_framedir, merge_ref_frame=merge_ref_frame,
-                                  ref_frame_ext=ref_frame_ext)
+    # Split: only the middle segment goes through CMNET2
+    # ref_start and ref_end are frame numbers (inclusive on both sides)
+    clip_mid = clip[ref_start:ref_end + 1]
+    has_head = ref_start > 0
+    has_tail = ref_end + 1 < clip.num_frames
 
-    clip_orig = clip
-    clip_ref = vs_ext_reference_clip(clip, sc_framedir=ref_framedir)
-    d_size = get_render_size(clip.width, clip.height, render_speed=render_speed.lower())
-    clip = clip.resize.Spline36(width=d_size[0], height=d_size[1])
-    clip_ref = clip_ref.resize.Spline36(width=d_size[0], height=d_size[1])
-    ref_same_as_video = (method == 3)
+    clip_mid, orig_fmt = convert_format_RGB24(clip_mid)
+    clip_mid_orig = clip_mid
+    orig_w, orig_h = clip_mid.width, clip_mid.height
+    d_size = get_render_size(orig_w, orig_h, render_speed=render_speed.lower())
+    clip_mid = clip_mid.resize.Spline36(width=d_size[0], height=d_size[1])
+
     if max_memory_frames is None or max_memory_frames == 0:
         max_memory_frames = DEF_XRF_WINDOW_SIZE
     max_memory_frames = max(2, math.trunc(max_memory_frames / 2) * 2)
-    clip_colored = vs_colormnet2_range(clip, clip_ref, frame_propagate=ref_same_as_video, render_vivid=render_vivid,
-                                 max_memory_frames=max_memory_frames, sc_framedir=ref_framedir, ref_range=ref_range,
-                                 retry_perm_share_threshold=retry_threshold, retry_model=retry_model)
 
+    ref_same_as_video = (method == 3)
+    clip_mid_colored = vs_colormnet2_range(clip_mid, clip_ref=None, frame_propagate=ref_same_as_video,
+                                 render_vivid=render_vivid, max_memory_frames=max_memory_frames,
+                                 sc_framedir=ref_framedir, ref_range=(ref_start, ref_end),
+                                 retry_perm_share_threshold=retry_threshold, retry_model=retry_model,
+                                 frame_offset=ref_start)
 
-    clip_resized = clip_colored.resize.Spline36(width=clip_orig.width, height=clip_orig.height)
-    # restore original resolution details, 5% faster than ShufflePlanes()
-    clip_new = vs_recover_clip_luma(clip_orig, clip_resized)
-    return restore_format(clip_new, orig_fmt)
+    clip_mid_colored = clip_mid_colored.resize.Spline36(width=orig_w, height=orig_h)
+    clip_mid_new = vs_recover_clip_luma(clip_mid_orig, clip_mid_colored)
+    clip_mid_new = restore_format(clip_mid_new, orig_fmt)
+
+    # Splice: head untouched + recolored mid + tail untouched
+    if has_head:
+        if has_tail:
+            return clip[:ref_start] + clip_mid_new + clip[ref_end + 1:]
+        else:
+            return clip[:ref_start] + clip_mid_new
+    else:
+        if has_tail:
+            return clip_mid_new + clip[ref_end + 1:]
+        else:
+            return clip_mid_new
 
 
 def vs_cmnet2dit(clip: vs.VideoNode = None,
@@ -1069,4 +1082,3 @@ def disable_warnings():
     warnings.simplefilter(action='ignore', category=DeprecationWarning)
     # warnings.simplefilter(action="ignore", category=Warning)
     torch._logging.set_logs(all=logging.ERROR)
-
