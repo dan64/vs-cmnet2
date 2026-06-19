@@ -18,11 +18,13 @@ from multiprocessing.shared_memory import SharedMemory
 from PIL import Image
 import warnings
 import xmlrpc.client
+import threading
 from .colormnet2_utils import *
 from ..vsslib.vsutils import MessageType, CMNET2_LogMessage
 
 class ColorMNetClient2:
-    _instance = None
+    _instance   = None
+    _lock       = threading.Lock()
     _initialized = False
     server_address: str = None
     server_port: int = None
@@ -113,37 +115,39 @@ class ColorMNetClient2:
         return Image.fromarray(arr.copy(), mode="RGB")
 
     def set_ref_frame(self, frame_ref: Image = None, frame_propagate: bool = False):
-        if frame_ref is None:
-            self._safe_remote_call(self.server.SetRefImageNone, frame_propagate)
-            return
-        shm, h, w = self._shm_write(frame_ref)
-        try:
-            self._safe_remote_call(
-                self.server.SetRefImageShm, shm.name, h, w, frame_propagate)
-        finally:
-            shm.close(); shm.unlink()
+        with self._lock:
+            if frame_ref is None:
+                self._safe_remote_call(self.server.SetRefImageNone, frame_propagate)
+                return
+            shm, h, w = self._shm_write(frame_ref)
+            try:
+                self._safe_remote_call(
+                    self.server.SetRefImageShm, shm.name, h, w, frame_propagate)
+            finally:
+                shm.close(); shm.unlink()
 
     def colorize_frame(self, ti: int = None, frame_i: Image = None) -> Image:
-        if frame_i is None:
-            return None
-        shm_in, h, w = self._shm_write(frame_i)
-        shm_out = SharedMemory(
-            name=f"cmnet2_out_{uuid.uuid4().hex[:12]}", create=True, size=h * w * 3)
-        try:
-            self._safe_remote_call(
-                self.server.ColorizeImageShm, shm_in.name, shm_out.name, h, w, ti)
-            result = self._shm_read(shm_out, h, w)
-            self._drain_server_logs()
-            return result
-        finally:
-            shm_in.close();  shm_in.unlink()
-            shm_out.close(); shm_out.unlink()
+        with self._lock:
+            if frame_i is None:
+                return None
+            shm_in, h, w = self._shm_write(frame_i)
+            shm_out = SharedMemory(
+                name=f"cmnet2_out_{uuid.uuid4().hex[:12]}", create=True, size=h * w * 3)
+            try:
+                self._safe_remote_call(
+                    self.server.ColorizeImageShm, shm_in.name, shm_out.name, h, w, ti)
+                result = self._shm_read(shm_out, h, w)
+                self._drain_server_logs()
+                return result
+            finally:
+                shm_in.close();  shm_in.unlink()
+                shm_out.close(); shm_out.unlink()
 
     def colorize_frame_with_retry(self, ti: int = None, frame_i: Image = None,
                                   retry_blend_weight: float = 0.85,
                                   merge_engine_weight: float = 0.40,
                                   render_factor: int = 24,
-                                   retry_model: int = 0) -> Image:
+                                  retry_model: int = 0) -> Image:
         """
         Single-call colorize + auto-retry. Server-side equivalent of:
 
@@ -162,33 +166,36 @@ class ColorMNetClient2:
         Parameters mirror ColorizeImageWithRetry on the server side; defaults
         are tuned empirically for CMNET2 retry workflow.
         """
-        if frame_i is None:
-            return None
-        shm_in, h, w = self._shm_write(frame_i)
-        shm_out = SharedMemory(
-            name=f"cmnet2_out_{uuid.uuid4().hex[:12]}", create=True, size=h * w * 3)
-        try:
-            self._safe_remote_call(
-                self.server.ColorizeImageWithRetryShm,
-                shm_in.name, shm_out.name, h, w,
-                ti, retry_blend_weight, merge_engine_weight, render_factor)
-            result = self._shm_read(shm_out, h, w)
-            self._drain_server_logs()
-            return result
-        finally:
-            shm_in.close();  shm_in.unlink()
-            shm_out.close(); shm_out.unlink()
+        with self._lock:
+            if frame_i is None:
+                return None
+            shm_in, h, w = self._shm_write(frame_i)
+            shm_out = SharedMemory(
+                name=f"cmnet2_out_{uuid.uuid4().hex[:12]}", create=True, size=h * w * 3)
+            try:
+                self._safe_remote_call(
+                    self.server.ColorizeImageWithRetryShm,
+                    shm_in.name, shm_out.name, h, w,
+                    ti, retry_blend_weight, merge_engine_weight, render_factor)
+                result = self._shm_read(shm_out, h, w)
+                self._drain_server_logs()
+                return result
+            finally:
+                shm_in.close();  shm_in.unlink()
+                shm_out.close(); shm_out.unlink()
 
     def preload_reference(self, ref_img: Image):
-        shm, h, w = self._shm_write(ref_img)
-        try:
-            self._safe_remote_call(
-                self.server.PreloadReferenceShm, shm.name, h, w)
-        finally:
-            shm.close(); shm.unlink()
+        with self._lock:
+            shm, h, w = self._shm_write(ref_img)
+            try:
+                self._safe_remote_call(
+                    self.server.PreloadReferenceShm, shm.name, h, w)
+            finally:
+                shm.close(); shm.unlink()
 
     def slide_permanent_memory(self, n_frames: int):
-        self._safe_remote_call(self.server.SlidePermanentMemory, n_frames)
+        with self._lock:
+            self._safe_remote_call(self.server.SlidePermanentMemory, n_frames)
 
     def get_perm_mem_frame_count(self) -> int:
         return self.server.GetPermMemFrameCount()
@@ -201,7 +208,8 @@ class ColorMNetClient2:
         XMLRPC serializes NaN as None on the wire; this method converts None
         back to float('nan') so the tuple is always (float, float).
         """
-        mmsp, perm_share = self.server.GetLastMatchMetrics()
+        with self._lock:
+            mmsp, perm_share = self.server.GetLastMatchMetrics()
         mmsp       = float('nan') if mmsp       is None else float(mmsp)
         perm_share = float('nan') if perm_share is None else float(perm_share)
         return mmsp, perm_share
