@@ -29,6 +29,7 @@ import math
 
 
 from .cmnet2_utils import convert_format_RGB24, restore_format, VIDEO_EXTENSIONS, get_ref_number
+from .cmnet2_utils import pil_cmnet2_colorize
 from .vsslib.mcomb import vs_combine_models, vs_ext_reference_clip
 from .vsslib.vsfilters import vs_simple_merge, vs_sc_colormap, vs_sc_dark_tweak
 from .vsslib.vsfilters import  vs_sc_chroma_bright_tweak, vs_recover_clip_luma
@@ -44,7 +45,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 
 import warnings
 import logging
