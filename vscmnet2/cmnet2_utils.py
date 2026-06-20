@@ -926,3 +926,113 @@ def rgb_balance(clip: vs.VideoNode, strength: float = 0.5, rgb_factor: list = (1
       clip_new = clip_rgb
 
    return clip_new
+
+
+"""
+------------------------------------------------------------------------------- 
+Author: Dan64
+Date: 2026-06-20
+------------------------------------------------------------------------------- 
+Description:
+------------------------------------------------------------------------------- 
+Standalone PIL-to-PIL colorization using CMNET2.
+Takes a color reference image and a B&W target image, returns the colorized target.
+"""
+
+
+def pil_cmnet2_colorize(
+    ref_image: Image.Image,
+    bw_image: Image.Image,
+    image_size: int = -1,
+    project_dir: str = None,
+) -> Image.Image:
+    """Colorize a B&W target image using a color reference image via CMNET2.
+
+    This function provides a simple PIL-to-PIL interface for exemplar-based
+    video colorization. The reference image supplies color context; the model
+    propagates those colors to the target B&W frame using the CMNET2 deep
+    learning model with DINOv2 features and permanent-memory attention.
+
+    :param ref_image:   PIL RGB Image -- the color reference frame.
+                        Must be mode 'RGB'. If 'L' (grayscale) is passed,
+                        it is converted to 'RGB' automatically.
+    :param bw_image:    PIL Image -- the B&W target frame to colorize.
+                        Must be mode 'RGB' (L channel replicated into 3 channels)
+                        or 'L' (grayscale, auto-converted to 'RGB').
+    :param image_size:  Inference resolution override. -1 uses the original
+                        image dimensions. Larger values increase quality at
+                        the cost of VRAM and speed.
+    :param project_dir: Path to the vscmnet2 package root directory.
+                        When None (default), auto-detects from this file's
+                        location. Only override when the package is relocated
+                        at runtime.
+
+    :return:            Colorized PIL RGB Image at the same resolution as
+                        the input bw_image.
+
+    Notes:
+        - The first call loads the CMNET2 model from disk (~5-10 s).
+          Subsequent calls in the same process reuse the loaded model and
+          are much faster (~1-2 s per image).
+        - Requires a CUDA-capable GPU with PyTorch >= 2.9.1.
+        - Model weights must be present under vscmnet2/weights/ and
+          vscmnet2/models/checkpoints/ (see README).
+
+    Example::
+
+        from PIL import Image
+        from vscmnet2 import pil_cmnet2_colorize
+
+        ref = Image.open("reference_frame.png").convert("RGB")
+        bw  = Image.open("target_frame.png").convert("RGB")
+        result = pil_cmnet2_colorize(ref, bw)
+        result.save("colorized.png")
+    """
+    import torch
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("pil_cmnet2_colorize: CUDA is not available")
+
+    # Ensure consistent CUDA environment (idempotent).
+    os.environ.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
+
+    # Normalize image modes.
+    if ref_image.mode != "RGB":
+        ref_image = ref_image.convert("RGB")
+    if bw_image.mode != "RGB":
+        bw_image = bw_image.convert("RGB")
+
+    # Resolve project directory for model weights.
+    if project_dir is None:
+        project_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+    # Lazy import to avoid circular dependencies at module level.
+    from .colormnet2.colormnet2_render import ColorMNetRender2
+
+    # Reset any existing singleton so we get a clean instance with our params.
+    # This ensures correct image_size and single-frame vid_length even when a
+    # VapourSynth session previously initialized the singleton differently.
+    ColorMNetRender2.reset()
+
+    # Create the renderer tuned for single-image colorization.
+    render = ColorMNetRender2(
+        image_size=image_size,
+        vid_length=1,
+        enable_resize=False,
+        encode_mode=1,           # local / in-process
+        max_memory_frames=1,
+        reset_on_ref_update=False,
+        retry_perm_share_threshold=-1.0,  # disable retry
+        project_dir=project_dir,
+    )
+
+    # Set the color reference and colorize the target.
+    render.set_ref_frame(ref_image, frame_propagate=False)
+    result = render.colorize_frame(ti=0, frame_i=bw_image)
+
+    # Clean up GPU memory but keep the singleton alive for reuse.
+    render.reset_state()
+
+    return result
