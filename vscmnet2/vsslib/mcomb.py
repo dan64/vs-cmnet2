@@ -46,7 +46,7 @@ def vs_ext_reference_clip(clip: vs.VideoNode, sc_framedir: str = None, clip_resi
     :return:            Clip with reference images injected at scene-change positions.
     """
     if not os.path.exists(sc_framedir):
-        CMNET2_LogMessage(MessageType.EXCEPTION, "vs_ext_reference_clip(): frames path '", sc_framedir, "' is invalid")
+        CMNET2_LogMessage(MessageType.EXCEPTION, f"vs_ext_reference_clip(): frames path '{sc_framedir}' is invalid")
 
     ref_images = get_ref_images(sc_framedir)
     if not ref_images:
@@ -64,7 +64,7 @@ def vs_ext_reference_clip(clip: vs.VideoNode, sc_framedir: str = None, clip_resi
                     clip = clip.resize.Spline64(width=ref_img.size[0], height=ref_img.size[1])
                     f_size = ref_img.size
             except Exception as error:
-                CMNET2_LogMessage(MessageType.WARNING, "Error reading reference frame: ", img_path, " -> ", error)
+                CMNET2_LogMessage(MessageType.WARNING, f"Error reading reference frame: '{img_path}' -> {error}")
 
     def set_clip_frame(n, f, img_list: list = None, f_size: Tuple[int, int] = None):
         f_out = f.copy()
@@ -85,13 +85,13 @@ def vs_ext_reference_clip(clip: vs.VideoNode, sc_framedir: str = None, clip_resi
                         # vs.core.log_message(2, "Resized reference frame: " + img_path + " size= " + str(f_size))
                         f_out.props['_SceneChangePrev'] = 1  # set scene-change detection ON
                 except Exception as error:
-                    CMNET2_LogMessage(MessageType.WARNING, "Error reading reference frame: ", img_path, " -> ", error)
+                    CMNET2_LogMessage(MessageType.WARNING, f"Error reading reference frame: '{img_path}' -> {error}")
                     return f_out
             else:
-                CMNET2_LogMessage(MessageType.WARNING, "vs_ext_reference_clip(): path '", img_path, "' is invalid")
+                CMNET2_LogMessage(MessageType.WARNING, f"vs_ext_reference_clip(): path '{img_path}' is invalid")
                 return f_out
         else:
-            CMNET2_LogMessage(MessageType.WARNING, "vs_ext_reference_clip(): not found file: '", img_name, ".*' ")
+            CMNET2_LogMessage(MessageType.WARNING, f"vs_ext_reference_clip(): not found file: '{img_name}.*'")
             return f_out
 
         if ref_img is None:

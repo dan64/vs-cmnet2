@@ -4,7 +4,7 @@ Author: Dan64
 Date: 2026-06-07
 version: 
 LastEditors: Dan64
-LastEditTime: 2026-06-07
+LastEditTime: 2026-07-03
 ------------------------------------------------------------------------------- 
 Description:
 ------------------------------------------------------------------------------- 
@@ -45,7 +45,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.5"
+__version__ = "1.0.6"
 
 import warnings
 import logging
@@ -888,8 +888,6 @@ def vs_extract_reference_frames(clip: vs.VideoNode, sc_threshold: float = consta
     :param sc_algo:             Algorithm applied for scene detection, allowed values are:
                                    0: It will be applied standard SCDetect() method + SSIM detection
                                    1: It will be applied advance detection on the edges.
-                                   2: It will be applied SCXvid plugin (very simple)
-                                   3: IT will be used SCDetection from MVTools
                                 Default = 0
     :param sc_debug:            Enable SC debug messages. default: False
     """
