@@ -13,7 +13,7 @@ VideoPath=os.path.join(clip_dir, "sample_bw.mp4")
 import vscmnet2 as cmnet2
 clip = cmnet2.vs_read_video(source=VideoPath)
 # colorize using CMNet with external DiT (HAVC)
-clip = cmnet2.vs_cmnet2dit(clip, max_memory_frames=10, dit_engine_params={"host": "127.0.0.1", "port": 8765})
+clip = cmnet2.vs_cmnet2dit(clip, max_memory_frames=10, dit_engine_params={"host": "127.0.0.1", "port": 8765}, backbone="dinov3")
 # adjusting output color from RGB24 to YUV420P10 for x265Model 
 clip = core.resize.Bicubic(clip=clip, format=vs.YUV420P10, matrix_s="709", range_in_s="full", range_s="limited", dither_type="error_diffusion") 
 # output

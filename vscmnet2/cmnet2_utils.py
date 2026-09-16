@@ -945,13 +945,15 @@ def pil_cmnet2_colorize(
     bw_image: Image.Image,
     image_size: int = -1,
     project_dir: str = None,
+    backbone: str = "dinov3",
 ) -> Image.Image:
     """Colorize a B&W target image using a color reference image via CMNET2.
 
     This function provides a simple PIL-to-PIL interface for exemplar-based
     video colorization. The reference image supplies color context; the model
     propagates those colors to the target B&W frame using the CMNET2 deep
-    learning model with DINOv2 features and permanent-memory attention.
+    learning model with DINOv3 (default) or DINOv2 features and permanent-memory
+    attention.
 
     :param ref_image:   PIL RGB Image -- the color reference frame.
                         Must be mode 'RGB'. If 'L' (grayscale) is passed,
@@ -966,6 +968,8 @@ def pil_cmnet2_colorize(
                         When None (default), auto-detects from this file's
                         location. Only override when the package is relocated
                         at runtime.
+    :param backbone:    Key-encoder backbone: 'dinov3' (default) or 'dinov2'.
+                        Requires the matching weights under vscmnet2/weights/.
 
     :return:            Colorized PIL RGB Image at the same resolution as
                         the input bw_image.
@@ -1026,6 +1030,7 @@ def pil_cmnet2_colorize(
         reset_on_ref_update=False,
         retry_perm_share_threshold=-1.0,  # disable retry
         project_dir=project_dir,
+        backbone=backbone,
     )
 
     # Set the color reference and colorize the target.

@@ -37,7 +37,7 @@ from .inference.inference_core import InferenceCore
 from .util.transforms import lab2rgb_transform_PIL
 from ..vsslib.imfilters import image_weighted_merge
 
-from .colormnet2_logbuffer import log_warning as _buf_warning, log_debug as _buf_debug
+from .colormnet2_logbuffer import ServerLogBuffer, log_warning as _buf_warning, log_debug as _buf_debug
 from ..vsslib.vsimage_engine import CMNET2imageEngine
 from ..vsslib.vsutils import MessageType, CMNET2_LogMessage
 
@@ -82,7 +82,11 @@ class ColorMNetRender2:
                  encode_mode: int = None, propagate: bool = False, max_memory_frames: int = None,
                  reset_on_ref_update: bool = True, top_k: int = 30, mem_every: int = 5,
                  retry_mmsp_threshold: float = -1.0, retry_perm_share_threshold: float = 0.25,
-                 retry_model: int = 0, project_dir: str = None):
+                 retry_model: int = 0, project_dir: str = None, backbone: str = "dinov3"):
+
+        if backbone not in ("dinov2", "dinov3"):
+            raise ValueError(f"unknown backbone: {backbone!r} (allowed values: 'dinov2', 'dinov3')")
+        self.backbone = backbone
         self.reset_on_ref_update = reset_on_ref_update  # deprecated with XMem2
         self.top_k = top_k
         self.mem_every = mem_every
@@ -122,6 +126,7 @@ class ColorMNetRender2:
         self._colorize_config_init(image_size, vid_length, propagate)
         if not self._initialized:
             self._colorize_model_init(vid_length)
+            self._flush_log_buffer()
             self._initialized = True
 
     def _colorize_config_init(self, image_size: int = -1, vid_length: int = 100, propagate: bool = False):
@@ -135,8 +140,23 @@ class ColorMNetRender2:
         cudnn.benchmark = True
         torch.autograd.set_grad_enabled(False)
         self.config = {}
-        # model checkpoint location
-        self.config['model'] = path.join(self.project_dir, '..', 'weights/DINOv2FeatureV6_LocalAtten_s2_154000.pth')
+        self.config['backbone'] = self.backbone
+        # model checkpoint location (depends on the selected backbone)
+        if self.backbone == 'dinov3':
+            # p369412: trained checkpoint (step 26000, PSNR 36.9412 on
+            # VAL_SUBSET_20, after the BN fix), exported from
+            # training/export_weights.py - no longer *_untrained.pth (which
+            # only had the never-trained backbone/proj, used until a real
+            # production checkpoint existed).
+            self.config['model'] = model_dir = path.join(self.project_dir, '..',
+                                                         'weights/DINOv3FeatureV6_LocalAtten_p369412.pth')
+            # local project path, NEVER the canonical HuggingFace name (that
+            # depends on the user's global cache and is not self-contained in
+            # the repo, unlike how all the other weights are managed)
+            self.config['dinov3_weights_dir'] = path.join(self.project_dir, '..', 'weights', 'dinov3-vitb16')
+        else:
+            self.config['model'] = model_dir = path.join(self.project_dir, '..',
+                                                         'weights/DINOv2FeatureV6_LocalAtten_s2_154000.pth')
         # Whether the provided reference frame is exactly the first input frame
         self.config['FirstFrameIsNotExemplar'] = not propagate
         # dataset setting
@@ -256,6 +276,32 @@ class ColorMNetRender2:
             # Promote to WARNING for visibility, mirroring the client-side
             # promotion done for the RPC route.
             CMNET2_LogMessage(MessageType.WARNING, f"[DEBUG] {msg}")
+
+    def _flush_log_buffer(self) -> None:
+        """Flush messages queued in the shared log buffer during the build.
+
+        Remote (encode_mode=0): nothing to do here - the RPC client drains
+        the buffer and forwards the messages to the VS log.
+        Local (encode_mode!=0): the render lives inside the VS process, so
+        the buffered messages (e.g. the load_weights report) would otherwise
+        never be drained; forward them to the VS log directly, with the same
+        level mapping used by the client-side drain.
+        """
+        if self.encode_mode == 0:
+            return
+        for item in ServerLogBuffer().drain():
+            if not item or len(item) < 2:
+                continue
+            level, text = item[0], item[1]
+            try:
+                mt = MessageType(int(level))
+            except ValueError:
+                mt = MessageType.INFORMATION
+            if mt == MessageType.EXCEPTION:
+                mt = MessageType.CRITICAL
+            if mt in (MessageType.DEBUG, MessageType.INFORMATION):
+                mt = MessageType.WARNING
+            CMNET2_LogMessage(mt, text)
 
     def preload_reference(self, ref_img: Image):
         """

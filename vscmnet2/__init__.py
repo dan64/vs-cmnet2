@@ -45,7 +45,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 
 import warnings
 import logging
@@ -80,7 +80,7 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
               render_vivid: bool = False, sc_framedir: str = None, dark: bool = False, dark_p: list = (0.2, 0.8),
               smooth: bool = False, smooth_p: list = (0.3, 0.7, 0.9, 0.0, "none"), colormap: str = "none",
               encode_mode: int = 0, max_memory_frames: int = 0, ref_mode: int = 1, retry_threshold: float = 0.0,
-              retry_model: int = 1, torch_dir: str = model_dir) -> vs.VideoNode:
+              retry_model: int = 1, torch_dir: str = model_dir, backbone: str = "dinov3") -> vs.VideoNode:
     """CMNET2 colorization filter
     :param clip:                Clip to process, any clip format is supported
     :param clip_ref:            Clip containing the reference frames (necessary if method=0,1,2,5,6)
@@ -144,6 +144,7 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
                                 Allowed values are:
                                     0: will use direct access to reference frame folder
                                     1: will use Vapoursynth clips to access to reference frames (default)
+    :param backbone:            Key-encoder backbone: 'dinov3' (default) or 'dinov2'.
     :param retry_threshold:     Threshold used to identify frames that may benefit from an additional
                                 reference frame. Range [0.0, 1.0], default 0.0 (disabled).
                                 High values (> 0.3) trigger more retry, while lower values (< 0.3) trigger less retry.
@@ -267,7 +268,8 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
                                             encode_mode=encode_mode, max_memory_frames=max_memory_frames,
                                             frame_propagate=ref_same_as_video, render_vivid=render_vivid,
                                             ref_weight=ref_weight, sc_framedir=sc_framedir if use_dir_refs else None,
-                                            retry_perm_share_threshold=retry_threshold, retry_model=retry_model)
+                                            retry_perm_share_threshold=retry_threshold, retry_model=retry_model,
+                                            backbone=backbone)
 
     clip_resized = clip_colored.resize.Spline36(width=clip_orig.width, height=clip_orig.height)
     # restore original resolution details, 5% faster than ShufflePlanes()
@@ -278,7 +280,7 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
 def vs_cmnet2_recolor(clip: vs.VideoNode = None, method: int = 4, render_speed: str = 'auto',
                       render_vivid: bool = False, ref_framedir: str = None, ref_start_path: str = None,
                       ref_end_path: str = None, max_memory_frames: int = 0, retry_threshold: float = 0.0,
-                      retry_model: int = 1, torch_dir: str = model_dir) -> vs.VideoNode:
+                      retry_model: int = 1, torch_dir: str = model_dir, backbone: str = "dinov3") -> vs.VideoNode:
     """CMNET2 colorization filter with colorization limited by a range of reference frames
     :param clip:                Colorized clip to process, any clip format is supported
     :param method:              Method to use to generate reference frames (RF).
@@ -306,6 +308,7 @@ def vs_cmnet2_recolor(clip: vs.VideoNode = None, method: int = 4, render_speed: 
                                 ref_nnnnnn.[jpg|png] and need to be stored in the same path defined in ref_framedir.
     :param ref_end_path:        Path to the last frame to be used for the clip re-colorization. Must be in the format
                                 ref_nnnnnn.[jpg|png] and need to be stored in the same path defined in ref_framedir.
+    :param backbone:            Key-encoder backbone: 'dinov3' (default) or 'dinov2'.
     :param retry_threshold:     Threshold used to identify frames that may benefit from an additional
                                 reference frame. Range [0.0, 1.0], default 0.0 (disabled).
                                 High values (> 0.3) trigger more retry, while lower values (< 0.3) trigger less retry.
@@ -366,7 +369,7 @@ def vs_cmnet2_recolor(clip: vs.VideoNode = None, method: int = 4, render_speed: 
                                  render_vivid=render_vivid, max_memory_frames=max_memory_frames,
                                  sc_framedir=ref_framedir, ref_range=(ref_start, ref_end),
                                  retry_perm_share_threshold=retry_threshold, retry_model=retry_model,
-                                 frame_offset=ref_start)
+                                 frame_offset=ref_start, backbone=backbone)
 
     clip_mid_colored = clip_mid_colored.resize.Spline36(width=orig_w, height=orig_h)
     clip_mid_new = vs_recover_clip_luma(clip_mid_orig, clip_mid_colored)
@@ -397,7 +400,7 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
                    dit_engine_params: dict = None,
                    retry_threshold: float = 0.0,
                    retry_model: int = 1,
-                   torch_dir: str = model_dir) -> vs.VideoNode:
+                   torch_dir: str = model_dir, backbone: str = "dinov3") -> vs.VideoNode:
     """CMNET2-DIT colorization filter.
     Like HAVC_cmnet2() but designed for B&W reference frames: scene-change
     frames extracted from the input clip are colorized by a DiT-based model
@@ -458,6 +461,7 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
                                      0 = CMNET2 (DeOldify + DDColor),
                                      1 = DiT fp4,
                                      2 = DiT int4.
+    :param backbone:            Key-encoder backbone: 'dinov3' (default) or 'dinov2'.
     :param torch_dir:           Torch hub directory for CMNET2 model weights.
                                 Default: package model directory.
                                 Pass None to use the Torch cache directory.
@@ -517,6 +521,7 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
         render_vivid=render_vivid,
         retry_perm_share_threshold=retry_threshold,
         retry_model=retry_model,
+        backbone=backbone,
     )
     # -----------------------------------------------------------------------
     # Restore original resolution and format

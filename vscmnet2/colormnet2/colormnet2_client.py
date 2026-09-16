@@ -38,7 +38,8 @@ class ColorMNetClient2:
     def __init__(self, image_size: int = -1, vid_length: int = 1000, enable_resize: bool = False,
                  encode_mode: int = 0, propagate: bool = False, max_memory_frames: int = None,
                  reset_on_ref_update: bool = True, retry_mmsp_threshold: float = -1.0,
-                 retry_perm_share_threshold: float = 0.30, retry_model: int = 0, server_port: int = None):
+                 retry_perm_share_threshold: float = 0.30, retry_model: int = 0, server_port: int = None,
+                 backbone: str = "dinov3"):
         if server_port is None:
             CMNET2_LogMessage(MessageType.CRITICAL, "CMNET2 Client(): server port is None")
             return
@@ -56,7 +57,7 @@ class ColorMNetClient2:
                 # Reinitialize the server-side render
                 self.server.initialize(image_size, vid_length, enable_resize, encode_mode, propagate,
                                        max_memory_frames, reset_on_ref_update, retry_mmsp_threshold,
-                                       retry_perm_share_threshold, retry_model)
+                                       retry_perm_share_threshold, retry_model, backbone)
             return
 
         if not self._initialized:
@@ -69,9 +70,10 @@ class ColorMNetClient2:
                 self.server = xmlrpc.client.ServerProxy(uri=self.uri, allow_none=True, use_builtin_types=True)
                 self.server.initialize(image_size, vid_length, enable_resize, encode_mode, propagate,
                                        max_memory_frames, reset_on_ref_update, retry_mmsp_threshold,
-                                       retry_perm_share_threshold, retry_model)
+                                       retry_perm_share_threshold, retry_model, backbone)
                 self._initialized = True
             except Exception as exe:
+                self._drain_server_logs()
                 CMNET2_LogMessage(MessageType.CRITICAL,
                                 f"CMNET2 Client(): init failed [{type(exe).__name__}]: {exe}")
 
@@ -82,17 +84,29 @@ class ColorMNetClient2:
         return self.server.GetFrameCount()
 
     def _safe_remote_call(self, fn, *args, max_attempts=3, base_delay=0.1):
-        """Retry an RPC call on OSError with linear backoff."""
-        # Retry on transient network errors (e.g. ephemeral port exhaustion
-        # on long-running sessions). 3 attempts with linear backoff cover
-        # the vast majority of cases. Re-raise on persistent failure.
+        """Retry an RPC call on OSError with linear backoff.
+
+        Server-side exceptions (XML-RPC Faults) are surfaced immediately:
+        the server-side traceback is drained from the log buffer and the
+        fault is re-raised.  Persistent OSError is re-raised too (it used
+        to return None silently, producing an untouched output frame).
+        Retries cover transient network errors (e.g. ephemeral port
+        exhaustion on long-running sessions).
+        """
         for attempt in range(max_attempts):
             try:
                 return fn(*args)
+            except xmlrpc.client.Fault as fault:
+                self._drain_server_logs()
+                CMNET2_LogMessage(MessageType.CRITICAL,
+                                  f"CMNET2 Client(): RPC fault: {fault.faultString}")
+                raise
             except OSError as exe:
-                if attempt == 2:
+                if attempt == max_attempts - 1:
+                    self._drain_server_logs()
                     CMNET2_LogMessage(MessageType.CRITICAL,
-                                    f"CMNET2 Client(): colorize_frame() failed [{type(exe).__name__}]: {exe}")
+                                      f"CMNET2 Client(): RPC call failed [{type(exe).__name__}]: {exe}")
+                    raise
                 import time
                 time.sleep(base_delay * (attempt + 1))
 

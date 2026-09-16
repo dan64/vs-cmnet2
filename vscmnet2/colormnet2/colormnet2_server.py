@@ -22,13 +22,14 @@ from xmlrpc.server import SimpleXMLRPCServer
 from xmlrpc.server import SimpleXMLRPCRequestHandler
 import tempfile
 import datetime
+import traceback
 from . import ColorMNetRender2
 from .colormnet2_utils import byte_array_to_image, image_to_byte_array
 
 # weights are not duplicated
 package_dir = os.path.dirname(os.path.realpath(__file__)).replace("colormnet2", "colormnet")
 
-from .colormnet2_logbuffer import ServerLogBuffer, log_warning, log_info, log_debug
+from .colormnet2_logbuffer import ServerLogBuffer, log_warning, log_info, log_debug, log_critical
 
 class ColorMNetRPCServer2:
     server_address: str = None
@@ -51,6 +52,24 @@ class ColorMNetRPCServer2:
         self.server.register_introspection_functions()
         self.server.register_instance(self.ColorMNetService(), allow_dotted_names=True)
 
+        # Wrap the dispatcher: any exception raised by a service method is
+        # recorded in the server log buffer with its full traceback (the
+        # client drains the buffer and forwards the messages to the
+        # VapourSynth log) before it is returned to the client as an XML-RPC
+        # Fault - so the real cause of an RPC failure is visible, not just
+        # the fault text.
+        _original_dispatch = self.server._dispatch
+
+        def _guarded_dispatch(method, params):
+            try:
+                return _original_dispatch(method, params)
+            except Exception:
+                log_critical("CMNET2 RPC server: exception in '" + str(method) + "':\n"
+                             + traceback.format_exc())
+                raise
+
+        self.server._dispatch = _guarded_dispatch
+
     def shutdown(self):
         self.server.shutdown()
 
@@ -60,7 +79,8 @@ class ColorMNetRPCServer2:
         def initialize(self, image_size: int = -1, vid_length: int = 1000, enable_resize: bool = False,
                        encode_mode: int = 0, propagate: bool = False, max_memory_frames: int = None,
                        reset_on_ref_update: bool = True, retry_mmsp_threshold: float = -1.0,
-                       retry_perm_share_threshold: float = 0.30, retry_model: int = 0):
+                       retry_perm_share_threshold: float = 0.30, retry_model: int = 0,
+                       backbone: str = "dinov3"):
             # Force a fresh render on reinitialization (e.g. VSEdit loop).
             # The render is a singleton and would otherwise keep stale state.
             if self.render is not None:
@@ -71,7 +91,8 @@ class ColorMNetRPCServer2:
                                            retry_mmsp_threshold=retry_mmsp_threshold,
                                            retry_perm_share_threshold=retry_perm_share_threshold,
                                            retry_model = retry_model,
-                                           project_dir=package_dir)
+                                           project_dir=package_dir,
+                                           backbone=backbone)
 
 
         def SetRefImage(self, img_byte_array: bytes, frame_propagate: bool = False):

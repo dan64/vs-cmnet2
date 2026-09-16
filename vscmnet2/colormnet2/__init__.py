@@ -37,13 +37,14 @@ package_dir = os.path.dirname(os.path.realpath(__file__))
 def vs_colormnet2_local(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs.VideoNode, image_size: int = -1,
                         enable_resize: bool = False, frame_propagate: bool = False, render_vivid: bool = False,
                         max_memory_frames: int = 0, ref_weight: float = 1.0, sc_framedir: str = None,
-                        retry_perm_share_threshold: float = 0.30, retry_model: int = 0) -> vs.VideoNode:
+                        retry_perm_share_threshold: float = 0.30, retry_model: int = 0,
+                        backbone: str = "dinov3") -> vs.VideoNode:
     vid_length = clip.num_frames
     # max_memory_frames here is the user's window_size; the colorizer's long-term memory stays large
     colorizer = ColorMNetRender2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
                                  encode_mode=1, max_memory_frames=DEF_MAX_MEMORY_FRAMES,
                                  reset_on_ref_update=False, retry_perm_share_threshold=retry_perm_share_threshold,
-                                 retry_model=retry_model, project_dir=package_dir)
+                                 retry_model=retry_model, project_dir=package_dir, backbone=backbone)
 
     clip_colored = _colormnet2_async(colorizer, clip, clip_ref, clip_sc, frame_propagate, ref_weight,
                                      max_memory_frames, sc_framedir, enable_retry=retry_perm_share_threshold > 0)
@@ -127,14 +128,14 @@ def vs_colormnet2_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs
                          enable_resize: bool = False, frame_propagate: bool = False, render_vivid: bool = False,
                          max_memory_frames: int = 0, ref_weight: float = 1.0, sc_framedir: str = None,
                          retry_perm_share_threshold: float = 0.25, retry_model: int = 0,
-                         server_port: int = 0) -> vs.VideoNode:
+                         server_port: int = 0, backbone: str = "dinov3") -> vs.VideoNode:
     vid_length = clip.num_frames
     server = ColorMNetServer2(server_port=server_port).run_server()
     # max_memory_frames here is the user's window_size; the colorizer's long-term memory stays large
     colorizer = ColorMNetClient2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
                                  encode_mode=0, max_memory_frames=DEF_MAX_MEMORY_FRAMES,
                                  reset_on_ref_update=False, retry_perm_share_threshold=retry_perm_share_threshold,
-                                 retry_model=retry_model, server_port=server.get_port())
+                                 retry_model=retry_model, server_port=server.get_port(), backbone=backbone)
 
     if not colorizer.is_initialized():
         CMNET2_LogMessage(MessageType.EXCEPTION, "Failed to initialize ColorMNet[remote] try ColorMNet[local]")
@@ -151,7 +152,8 @@ def vs_colormnet2_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs
 def vs_colormnet2_range(clip: vs.VideoNode, clip_ref: vs.VideoNode|None, frame_propagate: bool = False,
                         render_vivid: bool = False,  max_memory_frames: int = 0, sc_framedir: str = None,
                         ref_range: Tuple[int,int]| None = None,  retry_perm_share_threshold: float = 0.25,
-                        retry_model: int = 0, frame_offset: int = 0, server_port: int = 0) -> vs.VideoNode:
+                        retry_model: int = 0, frame_offset: int = 0, server_port: int = 0,
+                        backbone: str = "dinov3") -> vs.VideoNode:
     vid_length = clip.num_frames
     image_size: int = -1
     enable_resize: bool = False
@@ -161,7 +163,7 @@ def vs_colormnet2_range(clip: vs.VideoNode, clip_ref: vs.VideoNode|None, frame_p
     colorizer = ColorMNetClient2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
                                  encode_mode=0, max_memory_frames=DEF_MAX_MEMORY_FRAMES,
                                  reset_on_ref_update=False, retry_perm_share_threshold=retry_perm_share_threshold,
-                                 retry_model=retry_model, server_port=server.get_port())
+                                 retry_model=retry_model, server_port=server.get_port(), backbone=backbone)
 
     if not colorizer.is_initialized():
         CMNET2_LogMessage(MessageType.EXCEPTION, "Failed to initialize ColorMNet[remote] try ColorMNet[local]")
@@ -285,7 +287,7 @@ def vs_colormnet2dit_local(clip: vs.VideoNode, clip_ref: vs.VideoNode,
                            dit_engine, image_size: int = -1, enable_resize: bool = False,
                            frame_propagate: bool = False, render_vivid: bool = False,
                            max_memory_frames: int = 0, retry_perm_share_threshold: float = 0.0,
-                           retry_model: int = 0) -> vs.VideoNode:
+                           retry_model: int = 0, backbone: str = "dinov3") -> vs.VideoNode:
     """Local (in-process) CMNET2-DIT colorization.
     Identical to vs_colormnet2_local() except that reference frames are B&W
     and are colorized by dit_engine (CMNET2ditEngine) via PermMemWindowDit
@@ -324,7 +326,8 @@ def vs_colormnet2dit_local(clip: vs.VideoNode, clip_ref: vs.VideoNode,
         reset_on_ref_update=False,
         retry_perm_share_threshold=retry_perm_share_threshold,
         retry_model=retry_model,
-        project_dir=package_dir)
+        project_dir=package_dir,
+        backbone=backbone)
 
     clip_colored = _colormnet2dit_async(colorizer, dit_engine, clip, clip_ref, retry_perm_share_threshold > 0,
                                         frame_propagate, max_memory_frames)
@@ -392,7 +395,8 @@ def vs_colormnet2dit_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode,
                             dit_engine, image_size: int = -1, enable_resize: bool = False,
                             frame_propagate: bool = False, render_vivid: bool = False,
                             max_memory_frames: int = 0, retry_perm_share_threshold: float = 0.0,
-                            retry_model: int = 0, server_port: int = 0) -> vs.VideoNode:
+                            retry_model: int = 0, server_port: int = 0,
+                            backbone: str = "dinov3") -> vs.VideoNode:
     """Remote (XML-RPC subprocess) CMNET2-DIT colorization.
     Identical to vs_colormnet2_remote() except that reference frames are B&W
     and are colorized by dit_engine (CMNET2ditEngine) via PermMemWindowDit
@@ -426,7 +430,8 @@ def vs_colormnet2dit_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode,
         reset_on_ref_update=False,
         retry_perm_share_threshold=retry_perm_share_threshold,
         retry_model=retry_model,
-        server_port=server.get_port())
+        server_port=server.get_port(),
+        backbone=backbone)
 
     if not colorizer.is_initialized():
         CMNET2_LogMessage(MessageType.EXCEPTION,

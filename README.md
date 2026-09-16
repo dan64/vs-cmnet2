@@ -41,13 +41,25 @@ See [Model Weights](#model-weights) below.
 
 - **Python** ≥ 3.12
 - **VapourSynth** ≥ R74
-- **CUDA-capable GPU** with PyTorch ≥ 2.9.1
+- **CUDA-capable GPU** with PyTorch ≥ 2.7.0 (fully tested with 2.7.1+cu128 and 2.10+cu130)
+- **safetensors** ≥ 0.4 (used by the native DINOv3 backbone loader)
 
 ---
 
 ## Model Weights
 
-Download the following files from the [CMNET2 v1.0.0 Release](https://github.com/dan64/cmnet2/releases/tag/v1.0.0) and place them in the correct directories under `vscmnet2/`:
+### DINOv3 backbone (default)
+
+The filter uses the **DINOv3 ViT-B/16** key-encoder backbone by default (new in this release). Download these files from the [CMNET2 v1.1.0 Release](https://github.com/dan64/cmnet2/releases/tag/v1.1.0):
+
+| File | Destination | Download |
+|---|---|---|
+| `DINOv3FeatureV6_LocalAtten_p369412.pth` | `vscmnet2/weights/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.1.0/DINOv3FeatureV6_LocalAtten_p369412.pth) |
+| `dinov3-vitb16.zip` (extract to `vscmnet2/weights/`) | `vscmnet2/weights/dinov3-vitb16/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.1.0/dinov3-vitb16.zip) |
+
+### DINOv2 backbone (legacy)
+
+To use the previous **DINOv2 ViT-S/14** backbone, pass `backbone="dinov2"` to any of the filter functions and download these files from the [CMNET2 v1.0.0 Release](https://github.com/dan64/cmnet2/releases/tag/v1.0.0):
 
 | File | Destination | Download |
 |---|---|---|
@@ -56,7 +68,7 @@ Download the following files from the [CMNET2 v1.0.0 Release](https://github.com
 | `resnet18-5c106cde.pth` | `vscmnet2/models/checkpoints/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.0.0/resnet18-5c106cde.pth) |
 | `resnet50-19c8e357.pth` | `vscmnet2/models/checkpoints/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.0.0/resnet50-19c8e357.pth) |
 
-> **Note:** The DINOv2 source code (`facebookresearch_dinov2_main/`) is already included in this repository under `vscmnet2/models/`.
+> **Note:** The DINOv2 source code (`facebookresearch_dinov2_main/`) is already included in this repository under `vscmnet2/models/`. The DINOv3 backbone is loaded by a native PyTorch implementation (`colormnet2/model/dinov3_vit.py`) from the local `vscmnet2/weights/dinov3-vitb16/` directory (self-contained, no `transformers` dependency, never from the global HuggingFace cache).
 
 
 ## Install spatial_correlation_sampler
@@ -68,7 +80,8 @@ pip install spatial_correlation_sampler-0.5.0-cp312-cp312-win_amd64.whl
 ```
 
 > The wheel is pre-built for **Python 3.12 / PyTorch 2.10+cu130 / Windows x64**.
-> It will only work with that exact combination. For other environments it will be necessary build the wheel from sources.
+> It will only work with that exact combination. For other environments it will be necessary build the wheel from sources
+> (e.g. for Hybrid R77 with PyTorch 2.7.1+cu128, build it against the matching PyTorch version).
 
 ### 4. DiT model (optional — for `vs_cmnet2dit`)
 
@@ -109,6 +122,7 @@ clip = vs_cmnet2(
     max_memory_frames=40,
     retry_threshold=0.35,
     retry_model=1,            # Dit model
+    backbone="dinov3",        # default; use "dinov2" for the legacy backbone
 )
 ```
 
@@ -141,6 +155,7 @@ clip = vs_cmnet2_recolor(
     ref_end_path="/path/to/refs/ref_000200.png",
     method=4,
     max_memory_frames=20,
+    backbone="dinov3",        # default; use "dinov2" for the legacy backbone
 )
 ```
 
@@ -170,6 +185,7 @@ clip = vs_read_video("/path/to/video.mkv")
 | `max_memory_frames` | int | `0` (→20) | Permanent-memory window size (even, 10–500) |
 | `retry_threshold` | float | `0.0` | Retry trigger (0.0=disabled; suggest 0.20–0.35) |
 | `retry_model` | int | `1` | 1=DiT fp4, 2=DiT int4 |
+| `backbone` | str | `"dinov3"` | Key-encoder backbone: `dinov3` (default) or `dinov2` |
 | `torch_dir` | str | model dir | Torch hub cache location |
 
 ### `vs_cmnet2`
@@ -186,6 +202,7 @@ clip = vs_read_video("/path/to/video.mkv")
 | `ref_mode` | int | `1` | 0=direct folder, 1=VS clips |
 | `retry_threshold` | float | `0.0` | Retry trigger (0.0=disabled; suggest 0.20–0.35) |
 | `retry_model` | int | `0` | 0=DeOldify+DDColor, 1=DiT fp4, 2=DiT int4 |
+| `backbone` | str | `"dinov3"` | Key-encoder backbone: `dinov3` (default) or `dinov2` |
 | `torch_dir` | str | model dir | Torch hub cache location |
 
 ### `vs_cmnet2dit`
@@ -197,6 +214,7 @@ clip = vs_read_video("/path/to/video.mkv")
 | `sc_min_int` | int | `25` | Min frame distance between scene changes |
 | `max_memory_frames` | int | `0` (→20) | Permanent-memory window (even, pair-wise) |
 | `dit_engine_params` | dict | `None` | DiT Engine Server connection |
+| `backbone` | str | `"dinov3"` | Key-encoder backbone: `dinov3` (default) or `dinov2` |
 
 ---
 
@@ -204,7 +222,7 @@ clip = vs_read_video("/path/to/video.mkv")
 
 CMNET2 (Colorization Memory Network v2) is an exemplar-based video colorization model. It maintains a **sliding permanent memory** of reference frames and propagates color through a space-time memory network. The architecture uses:
 
-- **DINOv2 ViT-S/14** as the key encoder backbone
+- **DINOv3 ViT-B/16** as the key encoder backbone (default, fully fine-tuned) or **DINOv2 ViT-S/14** (legacy, selected with `backbone="dinov2"`)
 - **ResNet-18** and **ResNet-50** as value encoders
 - **LocalGatedPropagation** for attention-based memory readout
 - **CBAM** (Convolutional Block Attention Module) for feature refinement
@@ -252,6 +270,7 @@ vscmnet2/
 ## Credits
 
 - **CMNET2**: [dan64/cmnet2](https://github.com/dan64/cmnet2) — Exemplar-based Video Colorization with Long-term Spatiotemporal Memory
+- **DINOv3**: [facebookresearch/dinov3](https://github.com/facebookresearch/dinov3)
 - **DINOv2**: [facebookresearch/dinov2](https://github.com/facebookresearch/dinov2)
 - **XMem**: [hkchengrex/XMem](https://github.com/hkchengrex/XMem) — Long-Term Video Object Segmentation with an Atkinson-Shiffrin Memory Model
 

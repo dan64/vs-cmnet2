@@ -5,14 +5,15 @@ build-backend = "hatchling.build"
 [tool.hatch.build]
 exclude = [
   "/dist",
+  "AGENTS.md",
 ]
 
 [project]
 name = "vscmnet2"
-version = "1.0.6"
+version = "1.0.7"
 description = "CMNET2 functions for VapourSynth"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {file = "LICENSE"}
 authors = [{name = "Dan64", email = "whitedan64@gmail.com"}]
 keywords = ["CMNET2", "VapourSynth", "Colorization"]
@@ -24,12 +25,14 @@ classifiers = [
 ]
 dependencies = [   
   "numpy>=1.26.2",
-  "torch>=2.9.1",
+  "torch>=2.7.0",
+  "torchvision>=0.22",
   "pillow>=9.0.0",
-  "VapourSynth==74",
-  "scipy>=1.0.0",
+  "VapourSynth>=74",
   "opencv-python>=4.0.0",
   "scikit-image>=0.20.0",
+  "einops>=0.8",
+  "safetensors>=0.4.0",
 ]
 
 [project.urls]
