@@ -11,7 +11,7 @@ Colorizes black-and-white clips by propagating color from reference frames using
 Download the latest wheel from [Releases](https://github.com/dan64/vs-cmnet2/releases) and install:
 
 ```bash
-pip install vscmnet2-1.0.7-py3-none-any.whl
+pip install vscmnet2-1.0.8-py3-none-any.whl
 ```
 
 ### Plugins setup
@@ -69,6 +69,28 @@ To use the previous **DINOv2 ViT-S/14** backbone, pass `backbone="dinov2"` to an
 | `resnet50-19c8e357.pth` | `vscmnet2/models/checkpoints/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.0.0/resnet50-19c8e357.pth) |
 
 > **Note:** The DINOv2 source code (`facebookresearch_dinov2_main/`) is already included in this repository under `vscmnet2/models/`. The DINOv3 backbone is loaded by a native PyTorch implementation (`colormnet2/model/dinov3_vit.py`) from the local `vscmnet2/weights/dinov3-vitb16/` directory (self-contained, no `transformers` dependency, never from the global HuggingFace cache).
+
+### Model file names (`models.json`)
+
+The names of the checkpoints are not hardcoded in the code: they are stored in a single data file, `vscmnet2/vsslib/models.json`, shipped with the package:
+
+```json
+{
+  "cmnet2": {
+    "dinov3": {
+      "checkpoint": "DINOv3FeatureV6_LocalAtten_p369412.pth",
+      "weights_dir": "dinov3-vitb16"
+    },
+    "dinov2": {
+      "checkpoint": "DINOv2FeatureV6_LocalAtten_s2_154000.pth"
+    }
+  }
+}
+```
+
+Normally there is no need to touch it. Edit it only if the checkpoint files have different names (custom or renamed weights): `checkpoint` is the file inside `vscmnet2/weights/`, `weights_dir` is the auxiliary directory used by the DINOv3 backbone. When the configured file is missing, initialization stops immediately and the error lists the files actually present in the weights directory — so a typo in the checkpoint name (e.g. `LocalAttn` instead of `LocalAtten`) is immediately visible instead of failing silently.
+
+If `models.json` is missing or malformed, the built-in default names (the ones listed above) are used, and a warning is queued in the CMNET2 log buffer (the same channel used for the other model-build warnings, forwarded to the VapourSynth log both locally and in remote/`encode_mode=0`).
 
 
 ## Install spatial_correlation_sampler
@@ -251,6 +273,8 @@ vscmnet2/
 │   │   └── ...
 │   └── inference/       # Inference core, memory manager
 ├── vsslib/              # Shared VapourSynth utility library
+│   ├── models.json      # Checkpoint file names (see "Model file names")
+│   ├── models_config.py # models.json loader (get_cmnet2_model, check_file)
 │   ├── vsmodels.py      # Model dispatchers (vs_colormnet2, vs_colormnet2dit)
 │   ├── vsimage_engine.py   # DiT engine / DeOldify+DDColor fallback
 │   ├── vsplugins.py     # VapourSynth plugin loaders

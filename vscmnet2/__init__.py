@@ -4,7 +4,7 @@ Author: Dan64
 Date: 2026-06-07
 version: 
 LastEditors: Dan64
-LastEditTime: 2026-07-03
+LastEditTime: 2026-09-17
 ------------------------------------------------------------------------------- 
 Description:
 ------------------------------------------------------------------------------- 
@@ -45,7 +45,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.7"
+__version__ = "1.0.8"
 
 import warnings
 import logging

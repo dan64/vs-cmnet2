@@ -166,9 +166,12 @@ cython_debug/
 dist/
 __pycache__/
 *.pyc
+
+# Model weights (downloaded separately, never committed - see README)
 *.pth
 *.safetensors
-*.json
+vscmnet2/weights/**/*.json
+
 
 
 

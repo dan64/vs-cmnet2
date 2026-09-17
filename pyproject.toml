@@ -10,7 +10,7 @@ exclude = [
 
 [project]
 name = "vscmnet2"
-version = "1.0.7"
+version = "1.0.8"
 description = "CMNET2 functions for VapourSynth"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -28,7 +28,6 @@ dependencies = [
   "torch>=2.7.0",
   "torchvision>=0.22",
   "pillow>=9.0.0",
-  "VapourSynth>=74",
   "opencv-python>=4.0.0",
   "scikit-image>=0.20.0",
   "einops>=0.8",
