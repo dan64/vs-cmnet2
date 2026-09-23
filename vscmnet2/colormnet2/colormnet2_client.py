@@ -198,12 +198,12 @@ class ColorMNetClient2:
                 shm_in.close();  shm_in.unlink()
                 shm_out.close(); shm_out.unlink()
 
-    def preload_reference(self, ref_img: Image):
+    def preload_reference(self, ref_img: Image, frame_idx: int = None):
         with self._lock:
             shm, h, w = self._shm_write(ref_img)
             try:
                 self._safe_remote_call(
-                    self.server.PreloadReferenceShm, shm.name, h, w)
+                    self.server.PreloadReferenceShm, shm.name, h, w, frame_idx)
             finally:
                 shm.close(); shm.unlink()
 

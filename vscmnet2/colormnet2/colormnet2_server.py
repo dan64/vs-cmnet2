@@ -157,10 +157,10 @@ class ColorMNetRPCServer2:
             log_warning("CMNET2 Render is not initialized")
             return 0
 
-        def PreloadReference(self, img_byte_array: bytes):
+        def PreloadReference(self, img_byte_array: bytes, frame_idx: int = None):
             if self.render is not None:
                 img = byte_array_to_image(img_byte_array)
-                self.render.preload_reference(img)
+                self.render.preload_reference(img, frame_idx=frame_idx)
                 self._preload_counter += 1
             else:
                 log_warning("CMNET2 Render is not initialized")
@@ -282,11 +282,11 @@ class ColorMNetRPCServer2:
                 log_warning(f"ColorizeImageWithRetryShm failed at ti={ti}: {type(e).__name__}: {e}")
                 raise
 
-        def PreloadReferenceShm(self, shm_name: str, height: int, width: int):
+        def PreloadReferenceShm(self, shm_name: str, height: int, width: int, frame_idx: int = None):
             """Shared-memory variant of PreloadReference."""
             if self.render is not None:
                 img = self._shm_to_img(shm_name, height, width)
-                self.render.preload_reference(img)
+                self.render.preload_reference(img, frame_idx=frame_idx)
                 self._preload_counter += 1
             else:
                 log_warning("CMNET2 Render is not initialized")

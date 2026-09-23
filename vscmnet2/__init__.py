@@ -45,7 +45,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.8"
+__version__ = "1.0.9"
 
 import warnings
 import logging
@@ -97,12 +97,10 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
                                         'Slow'   : colors are a little more vivid
                                         'Slower' : colors are more accurate (usually is very slow)
     :param render_vivid:        If True, the saturation will be increased by about 15%. Default: False
-    :param sc_framedir:         If set, define the directory where are stored the reference frames. If only_ref_frames=True,
-                                and method=0 this directory will be written with the reference frames used by the filter.
-                                if method!=0 the directory will be read to create the reference frames that will be used
-                                by "Exemplar-based" Video Colorization. The reference frame name must be in the
-                                format: ref_nnnnnn.[jpg|png], for example the reference frame 897 must be
-                                named: ref_000897.png. With methods 5,6 this parameters can be the path to a video clip.
+    :param sc_framedir:         If set, define the directory where are stored the reference frames. 
+                                The reference frame name must be in the format: ref_nnnnnn.[jpg|png], 
+                                for example the reference frame 897 must be named: ref_000897.png. 
+                                With methods 5,6 this parameters can be the path to a video clip.
                                 NOTE: When used with method in (1, 2, 3, 4), reference frames are read directly
                                       from this directory instead of being re-evaluated through the VapourSynth
                                       pipeline for each preload/slide operation. This is significantly faster
@@ -235,6 +233,10 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
     if method != 0 and not (sc_framedir is None):
         clip_ref = vs_ext_reference_clip(clip, sc_framedir=sc_framedir)
 
+    if method in (3, 4) and (sc_framedir is None):
+        HAVC_LogMessage(MessageType.EXCEPTION,
+                        "vs_cmnet2: method in (3, 4) but sc_framedir is unset")
+                        
     d_size = get_render_size(clip.width, clip.height, render_speed=render_speed.lower())
     clip = clip.resize.Spline36(width=d_size[0], height=d_size[1])
     clip_ref = clip_ref.resize.Spline36(width=d_size[0], height=d_size[1])

@@ -11,7 +11,7 @@ Colorizes black-and-white clips by propagating color from reference frames using
 Download the latest wheel from [Releases](https://github.com/dan64/vs-cmnet2/releases) and install:
 
 ```bash
-pip install vscmnet2-1.0.8-py3-none-any.whl
+pip install vscmnet2-1.0.9-py3-none-any.whl
 ```
 
 ### Plugins setup
@@ -54,7 +54,7 @@ The filter uses the **DINOv3 ViT-B/16** key-encoder backbone by default (new in 
 
 | File | Destination | Download |
 |---|---|---|
-| `DINOv3FeatureV6_LocalAtten_p369412.pth` | `vscmnet2/weights/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.1.0/DINOv3FeatureV6_LocalAtten_p369412.pth) |
+| `DINOv3FeatureV6_LocalAtten_p372402.pth` | `vscmnet2/weights/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.2.0/DINOv3FeatureV6_LocalAtten_p372402.pth) |
 | `dinov3-vitb16.zip` (extract to `vscmnet2/weights/`) | `vscmnet2/weights/dinov3-vitb16/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.1.0/dinov3-vitb16.zip) |
 
 ### DINOv2 backbone (legacy)
@@ -78,8 +78,10 @@ The names of the checkpoints are not hardcoded in the code: they are stored in a
 {
   "cmnet2": {
     "dinov3": {
-      "checkpoint": "DINOv3FeatureV6_LocalAtten_p369412.pth",
-      "weights_dir": "dinov3-vitb16"
+      "checkpoint": "DINOv3FeatureV6_LocalAtten_p372402.pth",
+      "weights_dir": "dinov3-vitb16",
+      "enable_proximity_bias": false,
+      "proximity_bias_alpha": 0.7
     },
     "dinov2": {
       "checkpoint": "DINOv2FeatureV6_LocalAtten_s2_154000.pth"
@@ -88,9 +90,32 @@ The names of the checkpoints are not hardcoded in the code: they are stored in a
 }
 ```
 
-Normally there is no need to touch it. Edit it only if the checkpoint files have different names (custom or renamed weights): `checkpoint` is the file inside `vscmnet2/weights/`, `weights_dir` is the auxiliary directory used by the DINOv3 backbone. When the configured file is missing, initialization stops immediately and the error lists the files actually present in the weights directory — so a typo in the checkpoint name (e.g. `LocalAttn` instead of `LocalAtten`) is immediately visible instead of failing silently.
+Normally there is no need to touch it. Edit it only if the checkpoint files have different names (custom or renamed weights) or you want to change the default proximity-bias settings: `checkpoint` is the file inside `vscmnet2/weights/`, `weights_dir` is the auxiliary directory used by the DINOv3 backbone, and `enable_proximity_bias`/`proximity_bias_alpha` set the default for [proximity-weighted memory matching](#proximity-weighted-memory-matching-optional-dinov3-only) (DINOv3 only — ignored for DINOv2). When the configured file is missing, initialization stops immediately and the error lists the files actually present in the weights directory — so a typo in the checkpoint name (e.g. `LocalAttn` instead of `LocalAtten`) is immediately visible instead of failing silently.
 
 If `models.json` is missing or malformed, the built-in default names (the ones listed above) are used, and a warning is queued in the CMNET2 log buffer (the same channel used for the other model-build warnings, forwarded to the VapourSynth log both locally and in remote/`encode_mode=0`).
+
+### Proximity-weighted memory matching (optional, DINOv3 only)
+
+By default, permanent-memory candidates are ranked purely by content similarity, with no notion of *when* in the video a reference frame was captured relative to the frame being colorized — with a wide `max_memory_frames` window holding several visually similar but differently-colored references, this can wash the result toward gray. From CMNET2 v1.1.0, the model can optionally favor temporally closer references instead, without ever reducing the permanent memory's overall contribution to the readout. See the [mechanism explanation and a visual example](https://github.com/dan64/cmnet2#proximity-weighted-memory-matching-optional-dinov3-only) in the CMNET2 README.
+
+Unlike `backbone`, this is **not** exposed as a filter parameter on `vs_cmnet2`/`vs_cmnet2_recolor`/`vs_cmnet2dit` — it is configured once for the whole installation via the `enable_proximity_bias`/`proximity_bias_alpha` keys in `vsslib/models.json` (see above). Off by default. To permanently enable it (useful for permanent memory window size > 50) it is necessary to set `enable_proximity_bias=true` in the configuration 
+file stored in: `vsslib/models.json` as shown in the example below:
+
+```json
+{
+  "cmnet2": {
+    "dinov3": {
+      "checkpoint": "DINOv3FeatureV6_LocalAtten_p372402.pth",
+      "weights_dir": "dinov3-vitb16",
+      "enable_proximity_bias": true,
+      "proximity_bias_alpha": 0.7
+    },
+    "dinov2": {
+      "checkpoint": "DINOv2FeatureV6_LocalAtten_s2_154000.pth"
+    }
+  }
+}
+```
 
 
 ## Install spatial_correlation_sampler
@@ -248,7 +273,7 @@ CMNET2 (Colorization Memory Network v2) is an exemplar-based video colorization 
 - **ResNet-18** and **ResNet-50** as value encoders
 - **LocalGatedPropagation** for attention-based memory readout
 - **CBAM** (Convolutional Block Attention Module) for feature refinement
-- **KeyValueMemoryStore** with top-k readout for efficient retrieval
+- **KeyValueMemoryStore** with top-k readout for efficient retrieval, optionally weighted by temporal proximity to reference frames (see [Proximity-weighted memory matching](#proximity-weighted-memory-matching-optional-dinov3-only))
 
 The DiT variant offloads reference-frame colorization to an external DiT (Diffusion Transformer) model running in a separate RPC server process.
 

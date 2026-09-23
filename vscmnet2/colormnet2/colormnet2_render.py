@@ -83,7 +83,8 @@ class ColorMNetRender2:
                  encode_mode: int = None, propagate: bool = False, max_memory_frames: int = None,
                  reset_on_ref_update: bool = True, top_k: int = 30, mem_every: int = 5,
                  retry_mmsp_threshold: float = -1.0, retry_perm_share_threshold: float = 0.25,
-                 retry_model: int = 0, project_dir: str = None, backbone: str = "dinov3"):
+                 retry_model: int = 0, project_dir: str = None, backbone: str = "dinov3",
+                 enable_proximity_bias: bool = None, proximity_bias_alpha: float = None):
 
         if backbone not in ("dinov2", "dinov3"):
             raise ValueError(f"unknown backbone: {backbone!r} (allowed values: 'dinov2', 'dinov3')")
@@ -91,6 +92,16 @@ class ColorMNetRender2:
         self.reset_on_ref_update = reset_on_ref_update  # deprecated with XMem2
         self.top_k = top_k
         self.mem_every = mem_every
+        # proximity bias: additive-under-softmax penalty on perm_mem_similarity
+        # favoring temporally close reference frames. Both
+        # enable_proximity_bias/proximity_bias_alpha default to None here (not
+        # passed explicitly) so _colorize_config_init() can tell that apart
+        # from a deliberate value and fall back to vsslib/models.json/DEFAULTS
+        # - same precedence for both: constructor > models.json > hardcoded
+        # fallback (False/0.5). Not exposed through the public vs_cmnet2*
+        # API/RPC layer by design - configurable only via models.json.
+        self.enable_proximity_bias = enable_proximity_bias
+        self.proximity_bias_alpha = proximity_bias_alpha
         self.enable_resize = enable_resize
         # Edge-triggered state for VRAM reset warnings:
         # we log only on the False -> True transition to avoid spamming
@@ -173,6 +184,21 @@ class ColorMNetRender2:
         self.config['mem_every'] = min(self.mem_every, self.config[
 
             'max_mid_term_frames'])  # r in paper. Increase to improve running speed
+
+        # precedence: explicit constructor value > vsslib/models.json > hardcoded
+        # fallback - not an implicit merge, kept as two explicit "was it passed
+        # at all" checks. model_info.get(..., default) also covers the 'dinov2'
+        # entry, which deliberately has no enable_proximity_bias/
+        # proximity_bias_alpha keys (see vsslib/models.json) - the bias stays
+        # dinov3-specific.
+        if self.enable_proximity_bias is None:
+            self.enable_proximity_bias = model_info.get('enable_proximity_bias', False)
+        if self.backbone != 'dinov3':
+            self.enable_proximity_bias = False
+        if self.proximity_bias_alpha is None:
+            self.proximity_bias_alpha = model_info.get('proximity_bias_alpha', 0.5)
+        self.config['enable_proximity_bias'] = self.enable_proximity_bias
+        self.config['proximity_bias_alpha'] = self.proximity_bias_alpha
 
         self.config['deep_update_every'] = -1  # Leave -1 normally to synchronize with mem_every
         # Multi-scale options
@@ -299,10 +325,13 @@ class ColorMNetRender2:
                 mt = MessageType.WARNING
             CMNET2_LogMessage(mt, text)
 
-    def preload_reference(self, ref_img: Image):
+    def preload_reference(self, ref_img: Image, frame_idx: int = None):
         """
         Preloads a reference frame into perm_mem before starting colorization.
         Can be called N times consecutively.
+        frame_idx: source frame index of this reference, used by the
+            optional proximity bias. None (default) skips proximity-bias
+            tracking for this frame.
         """
         if self.processor is None:
             return
@@ -314,7 +343,7 @@ class ColorMNetRender2:
         if self.processor.all_labels is None:
             self.processor.set_all_labels(list(range(1, 3)))
 
-        self.processor.load_reference(img_lll, img_ab)
+        self.processor.load_reference(img_lll, img_ab, frame_idx=frame_idx)
         # Free memory cache
         torch.cuda.empty_cache()
 
