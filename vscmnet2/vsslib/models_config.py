@@ -24,10 +24,10 @@ from ..colormnet2.colormnet2_logbuffer import log_warning as _buf_warning
 DEFAULTS = {
     "cmnet2": {
         "dinov3": {
-            "checkpoint": "DINOv3FeatureV6_LocalAtten_p372402.pth",
+            "checkpoint": "DINOv3FeatureV6_LocalAtten_p374099.pth",
             "weights_dir": "dinov3-vitb16",
             "enable_proximity_bias": False,
-            "proximity_bias_alpha": 0.7,
+            "proximity_bias_alpha": 0.5,
         },
         "dinov2": {
             "checkpoint": "DINOv2FeatureV6_LocalAtten_s2_154000.pth",

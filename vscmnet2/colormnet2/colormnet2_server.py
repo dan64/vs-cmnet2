@@ -80,7 +80,8 @@ class ColorMNetRPCServer2:
                        encode_mode: int = 0, propagate: bool = False, max_memory_frames: int = None,
                        reset_on_ref_update: bool = True, retry_mmsp_threshold: float = -1.0,
                        retry_perm_share_threshold: float = 0.30, retry_model: int = 0,
-                       backbone: str = "dinov3"):
+                       backbone: str = "dinov3", enable_proximity_bias: bool = None,
+                       proximity_bias_alpha: float = None):
             # Force a fresh render on reinitialization (e.g. VSEdit loop).
             # The render is a singleton and would otherwise keep stale state.
             if self.render is not None:
@@ -92,7 +93,9 @@ class ColorMNetRPCServer2:
                                            retry_perm_share_threshold=retry_perm_share_threshold,
                                            retry_model = retry_model,
                                            project_dir=package_dir,
-                                           backbone=backbone)
+                                           backbone=backbone,
+                                           enable_proximity_bias=enable_proximity_bias,
+                                           proximity_bias_alpha=proximity_bias_alpha)
 
 
         def SetRefImage(self, img_byte_array: bytes, frame_propagate: bool = False):

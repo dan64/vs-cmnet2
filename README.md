@@ -54,7 +54,7 @@ The filter uses the **DINOv3 ViT-B/16** key-encoder backbone by default (new in 
 
 | File | Destination | Download |
 |---|---|---|
-| `DINOv3FeatureV6_LocalAtten_p372402.pth` | `vscmnet2/weights/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.2.0/DINOv3FeatureV6_LocalAtten_p372402.pth) |
+| `DINOv3FeatureV6_LocalAtten_p374099.pth` | `vscmnet2/weights/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.2.0/DINOv3FeatureV6_LocalAtten_p374099.pth) |
 | `dinov3-vitb16.zip` (extract to `vscmnet2/weights/`) | `vscmnet2/weights/dinov3-vitb16/` | [download](https://github.com/dan64/cmnet2/releases/download/v1.1.0/dinov3-vitb16.zip) |
 
 ### DINOv2 backbone (legacy)
@@ -78,10 +78,10 @@ The names of the checkpoints are not hardcoded in the code: they are stored in a
 {
   "cmnet2": {
     "dinov3": {
-      "checkpoint": "DINOv3FeatureV6_LocalAtten_p372402.pth",
+      "checkpoint": "DINOv3FeatureV6_LocalAtten_p374099.pth",
       "weights_dir": "dinov3-vitb16",
       "enable_proximity_bias": false,
-      "proximity_bias_alpha": 0.7
+      "proximity_bias_alpha": 0.5
     },
     "dinov2": {
       "checkpoint": "DINOv2FeatureV6_LocalAtten_s2_154000.pth"
@@ -98,23 +98,35 @@ If `models.json` is missing or malformed, the built-in default names (the ones l
 
 By default, permanent-memory candidates are ranked purely by content similarity, with no notion of *when* in the video a reference frame was captured relative to the frame being colorized — with a wide `max_memory_frames` window holding several visually similar but differently-colored references, this can wash the result toward gray. From CMNET2 v1.1.0, the model can optionally favor temporally closer references instead, without ever reducing the permanent memory's overall contribution to the readout. See the [mechanism explanation and a visual example](https://github.com/dan64/cmnet2#proximity-weighted-memory-matching-optional-dinov3-only) in the CMNET2 README.
 
-Unlike `backbone`, this is **not** exposed as a filter parameter on `vs_cmnet2`/`vs_cmnet2_recolor`/`vs_cmnet2dit` — it is configured once for the whole installation via the `enable_proximity_bias`/`proximity_bias_alpha` keys in `vsslib/models.json` (see above). Off by default. To permanently enable it (useful for permanent memory window size > 50) it is necessary to set `enable_proximity_bias=true` in the configuration 
+Like `backbone`, this can be controlled per-call via the `enable_proximity_bias`/`proximity_bias_alpha` parameters of `vs_cmnet2` (both default to `None`, meaning "use whatever `vsslib/models.json` says"). It is **not** exposed on `vs_cmnet2_recolor`/`vs_cmnet2dit` — those only pick up the installation-wide default from `vsslib/models.json` (see above). Off by default. To change the installation-wide default (useful for permanent memory window size > 50) it is necessary to set `enable_proximity_bias=true` in the configuration 
 file stored in: `vsslib/models.json` as shown in the example below:
 
 ```json
 {
   "cmnet2": {
     "dinov3": {
-      "checkpoint": "DINOv3FeatureV6_LocalAtten_p372402.pth",
+      "checkpoint": "DINOv3FeatureV6_LocalAtten_p374099.pth",
       "weights_dir": "dinov3-vitb16",
       "enable_proximity_bias": true,
-      "proximity_bias_alpha": 0.7
+      "proximity_bias_alpha": 0.5
     },
     "dinov2": {
       "checkpoint": "DINOv2FeatureV6_LocalAtten_s2_154000.pth"
     }
   }
 }
+```
+
+To enable it only for a specific `vs_cmnet2` call instead of installation-wide, pass the parameters directly (they take precedence over `vsslib/models.json`):
+
+```python
+clip = vs_cmnet2(
+    clip,
+    clip_ref=ref_clip,
+    method=0,
+    enable_proximity_bias=True,
+    proximity_bias_alpha=0.5,
+)
 ```
 
 
@@ -250,6 +262,8 @@ clip = vs_read_video("/path/to/video.mkv")
 | `retry_threshold` | float | `0.0` | Retry trigger (0.0=disabled; suggest 0.20–0.35) |
 | `retry_model` | int | `0` | 0=DeOldify+DDColor, 1=DiT fp4, 2=DiT int4 |
 | `backbone` | str | `"dinov3"` | Key-encoder backbone: `dinov3` (default) or `dinov2` |
+| `enable_proximity_bias` | bool | `None` | Enable [proximity-weighted memory matching](#proximity-weighted-memory-matching-optional-dinov3-only) (DINOv3 only). `None` = use `vsslib/models.json` |
+| `proximity_bias_alpha` | float | `None` | Strength of the proximity bias. `None` = use `vsslib/models.json` |
 | `torch_dir` | str | model dir | Torch hub cache location |
 
 ### `vs_cmnet2dit`

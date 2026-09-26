@@ -39,7 +39,8 @@ class ColorMNetClient2:
                  encode_mode: int = 0, propagate: bool = False, max_memory_frames: int = None,
                  reset_on_ref_update: bool = True, retry_mmsp_threshold: float = -1.0,
                  retry_perm_share_threshold: float = 0.30, retry_model: int = 0, server_port: int = None,
-                 backbone: str = "dinov3"):
+                 backbone: str = "dinov3", enable_proximity_bias: bool = None,
+                 proximity_bias_alpha: float = None):
         if server_port is None:
             CMNET2_LogMessage(MessageType.CRITICAL, "CMNET2 Client(): server port is None")
             return
@@ -57,7 +58,8 @@ class ColorMNetClient2:
                 # Reinitialize the server-side render
                 self.server.initialize(image_size, vid_length, enable_resize, encode_mode, propagate,
                                        max_memory_frames, reset_on_ref_update, retry_mmsp_threshold,
-                                       retry_perm_share_threshold, retry_model, backbone)
+                                       retry_perm_share_threshold, retry_model, backbone,
+                                       enable_proximity_bias, proximity_bias_alpha)
             return
 
         if not self._initialized:
@@ -70,7 +72,8 @@ class ColorMNetClient2:
                 self.server = xmlrpc.client.ServerProxy(uri=self.uri, allow_none=True, use_builtin_types=True)
                 self.server.initialize(image_size, vid_length, enable_resize, encode_mode, propagate,
                                        max_memory_frames, reset_on_ref_update, retry_mmsp_threshold,
-                                       retry_perm_share_threshold, retry_model, backbone)
+                                       retry_perm_share_threshold, retry_model, backbone,
+                                       enable_proximity_bias, proximity_bias_alpha)
                 self._initialized = True
             except Exception as exe:
                 self._drain_server_logs()

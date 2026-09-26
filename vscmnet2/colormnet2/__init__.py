@@ -38,13 +38,16 @@ def vs_colormnet2_local(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs.
                         enable_resize: bool = False, frame_propagate: bool = False, render_vivid: bool = False,
                         max_memory_frames: int = 0, ref_weight: float = 1.0, sc_framedir: str = None,
                         retry_perm_share_threshold: float = 0.30, retry_model: int = 0,
-                        backbone: str = "dinov3") -> vs.VideoNode:
+                        backbone: str = "dinov3", enable_proximity_bias: bool = None,
+                        proximity_bias_alpha: float = None) -> vs.VideoNode:
     vid_length = clip.num_frames
     # max_memory_frames here is the user's window_size; the colorizer's long-term memory stays large
     colorizer = ColorMNetRender2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
                                  encode_mode=1, max_memory_frames=DEF_MAX_MEMORY_FRAMES,
                                  reset_on_ref_update=False, retry_perm_share_threshold=retry_perm_share_threshold,
-                                 retry_model=retry_model, project_dir=package_dir, backbone=backbone)
+                                 retry_model=retry_model, project_dir=package_dir, backbone=backbone,
+                                 enable_proximity_bias=enable_proximity_bias,
+                                 proximity_bias_alpha=proximity_bias_alpha)
 
     clip_colored = _colormnet2_async(colorizer, clip, clip_ref, clip_sc, frame_propagate, ref_weight,
                                      max_memory_frames, sc_framedir, enable_retry=retry_perm_share_threshold > 0)
@@ -128,14 +131,17 @@ def vs_colormnet2_remote(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs
                          enable_resize: bool = False, frame_propagate: bool = False, render_vivid: bool = False,
                          max_memory_frames: int = 0, ref_weight: float = 1.0, sc_framedir: str = None,
                          retry_perm_share_threshold: float = 0.25, retry_model: int = 0,
-                         server_port: int = 0, backbone: str = "dinov3") -> vs.VideoNode:
+                         server_port: int = 0, backbone: str = "dinov3", enable_proximity_bias: bool = None,
+                         proximity_bias_alpha: float = None) -> vs.VideoNode:
     vid_length = clip.num_frames
     server = ColorMNetServer2(server_port=server_port).run_server()
     # max_memory_frames here is the user's window_size; the colorizer's long-term memory stays large
     colorizer = ColorMNetClient2(image_size=image_size, vid_length=vid_length, enable_resize=enable_resize,
                                  encode_mode=0, max_memory_frames=DEF_MAX_MEMORY_FRAMES,
                                  reset_on_ref_update=False, retry_perm_share_threshold=retry_perm_share_threshold,
-                                 retry_model=retry_model, server_port=server.get_port(), backbone=backbone)
+                                 retry_model=retry_model, server_port=server.get_port(), backbone=backbone,
+                                 enable_proximity_bias=enable_proximity_bias,
+                                 proximity_bias_alpha=proximity_bias_alpha)
 
     if not colorizer.is_initialized():
         CMNET2_LogMessage(MessageType.EXCEPTION, "Failed to initialize ColorMNet[remote] try ColorMNet[local]")

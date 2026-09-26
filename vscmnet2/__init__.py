@@ -4,7 +4,7 @@ Author: Dan64
 Date: 2026-06-07
 version: 
 LastEditors: Dan64
-LastEditTime: 2026-09-17
+LastEditTime: 2026-09-26
 ------------------------------------------------------------------------------- 
 Description:
 ------------------------------------------------------------------------------- 
@@ -45,7 +45,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.0.9"
+__version__ = "1.1.0"
 
 import warnings
 import logging
@@ -80,7 +80,8 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
               render_vivid: bool = False, sc_framedir: str = None, dark: bool = False, dark_p: list = (0.2, 0.8),
               smooth: bool = False, smooth_p: list = (0.3, 0.7, 0.9, 0.0, "none"), colormap: str = "none",
               encode_mode: int = 0, max_memory_frames: int = 0, ref_mode: int = 1, retry_threshold: float = 0.0,
-              retry_model: int = 1, torch_dir: str = model_dir, backbone: str = "dinov3") -> vs.VideoNode:
+              retry_model: int = 1, torch_dir: str = model_dir, backbone: str = "dinov3",
+              enable_proximity_bias: bool = None, proximity_bias_alpha: float = None) -> vs.VideoNode:
     """CMNET2 colorization filter
     :param clip:                Clip to process, any clip format is supported
     :param clip_ref:            Clip containing the reference frames (necessary if method=0,1,2,5,6)
@@ -156,6 +157,11 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
                                 (Model CMNET2). Range [0, 1, 2], default = 0
     :param torch_dir:           torch hub dir location, default is model directory, if set to None will switch
                                 to torch cache dir
+    :param enable_proximity_bias:  Favor temporally closer permanent-memory reference frames over
+                                purely content-similar ones (DINOv3 only). Default None: falls back to the
+                                'enable_proximity_bias' value in vsslib/models.json (off by default there too).
+    :param proximity_bias_alpha:   Strength of the proximity bias, used only if enable_proximity_bias is True.
+                                Default None: falls back to the 'proximity_bias_alpha' value in vsslib/models.json.
     """
     # disable packages warnings
     disable_warnings()
@@ -234,9 +240,9 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
         clip_ref = vs_ext_reference_clip(clip, sc_framedir=sc_framedir)
 
     if method in (3, 4) and (sc_framedir is None):
-        HAVC_LogMessage(MessageType.EXCEPTION,
+        CMNET2_LogMessage(MessageType.EXCEPTION,
                         "vs_cmnet2: method in (3, 4) but sc_framedir is unset")
-                        
+
     d_size = get_render_size(clip.width, clip.height, render_speed=render_speed.lower())
     clip = clip.resize.Spline36(width=d_size[0], height=d_size[1])
     clip_ref = clip_ref.resize.Spline36(width=d_size[0], height=d_size[1])
@@ -271,7 +277,8 @@ def vs_cmnet2(clip: vs.VideoNode = None, clip_ref: vs.VideoNode = None, method: 
                                             frame_propagate=ref_same_as_video, render_vivid=render_vivid,
                                             ref_weight=ref_weight, sc_framedir=sc_framedir if use_dir_refs else None,
                                             retry_perm_share_threshold=retry_threshold, retry_model=retry_model,
-                                            backbone=backbone)
+                                            backbone=backbone, enable_proximity_bias=enable_proximity_bias,
+                                            proximity_bias_alpha=proximity_bias_alpha)
 
     clip_resized = clip_colored.resize.Spline36(width=clip_orig.width, height=clip_orig.height)
     # restore original resolution details, 5% faster than ShufflePlanes()
@@ -404,10 +411,10 @@ def vs_cmnet2dit(clip: vs.VideoNode = None,
                    retry_model: int = 1,
                    torch_dir: str = model_dir, backbone: str = "dinov3") -> vs.VideoNode:
     """CMNET2-DIT colorization filter.
-    Like HAVC_cmnet2() but designed for B&W reference frames: scene-change
+    Like vs_cmnet2() but designed for B&W reference frames: scene-change
     frames extracted from the input clip are colorized by a DiT-based model
     (DiT Engine, accessed via RPC) *before* being loaded into CMNET2
-    permanent memory.  This makes HAVC_cmnet2dit() self-contained, no
+    permanent memory.  This makes vs_cmnet2dit() self-contained, no
     eparate pre-colored reference clip is needed.
     The DiT colorization of reference frames always runs in pairs
     (colorize_image_pair()) to exploit the DiT model's batched forward pass.
@@ -993,8 +1000,7 @@ def _extract_reference_frames(clip: vs.VideoNode, sc_framedir: str = "./", ref_o
                               ref_override: bool = True, prop_name: str = "_SceneChangePrev") -> vs.VideoNode:
     """Export scene-change frames from clip to a directory on disk.
     Creates sc_framedir if it does not exist, converts the clip to RGB24, then delegates
-    to vs_sc_export_frames. Primarily used by HAVC_main to persist reference frames for
-    subsequent exemplar-based passes.
+    to vs_sc_export_frames. 
     :param clip:         Input clip (any format).
     :param sc_framedir:  Output directory for reference images. Created if missing.
     :param ref_offset:   Value added to the frame number in each filename. Default 0.

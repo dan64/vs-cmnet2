@@ -25,7 +25,8 @@ def vs_colormnet2(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs.VideoN
                   enable_resize: bool = False, frame_propagate: bool = True, render_vivid: bool = True,
                   max_memory_frames: int = 0, encode_mode: int = 0, ref_weight: float = 1.0,
                   sc_framedir: str = None, retry_perm_share_threshold: float = 0.25,
-                  retry_model: int = 1, backbone: str = "dinov3") -> vs.VideoNode:
+                  retry_model: int = 1, backbone: str = "dinov3", enable_proximity_bias: bool = None,
+                  proximity_bias_alpha: float = None) -> vs.VideoNode:
     """Colorize a clip using CMNET2 (exemplar-based, sliding permanent-memory).
     :param clip:               B&W source clip (RGB24).
     :param clip_ref:           Coloured reference clip carrying scene-change frame props.
@@ -43,6 +44,9 @@ def vs_colormnet2(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs.VideoN
     :param retry_model:         Model used by the retry path to colorize missing reference frames.
                                      1 = DiT fp4, 2 = DiT int4. Default 1.
     :param backbone:            Key-encoder backbone: 'dinov3' (default) or 'dinov2'.
+    :param enable_proximity_bias:  Favor temporally closer permanent-memory reference frames (DINOv3 only).
+                                Default None: falls back to vsslib/models.json.
+    :param proximity_bias_alpha:   Strength of the proximity bias. Default None: falls back to vsslib/models.json.
     :return:                   Colourised clip (RGB24).
     """
     # max_memory_frames acts as window_size for the sliding perm_mem; default to DEF_XRF_WINDOW_SIZE
@@ -54,12 +58,16 @@ def vs_colormnet2(clip: vs.VideoNode, clip_ref: vs.VideoNode, clip_sc: vs.VideoN
             return vs_colormnet2_remote(clip, clip_ref, clip_sc, image_size, enable_resize, frame_propagate,
                                         render_vivid, max_memory_frames, ref_weight, sc_framedir,
                                         retry_perm_share_threshold=retry_perm_share_threshold,
-                                        retry_model=retry_model, backbone=backbone)
+                                        retry_model=retry_model, backbone=backbone,
+                                        enable_proximity_bias=enable_proximity_bias,
+                                        proximity_bias_alpha=proximity_bias_alpha)
         case 1:
             return vs_colormnet2_local(clip, clip_ref, clip_sc, image_size, enable_resize, frame_propagate,
                                        render_vivid, max_memory_frames, ref_weight, sc_framedir,
                                        retry_perm_share_threshold=retry_perm_share_threshold,
-                                       retry_model=retry_model, backbone=backbone)
+                                       retry_model=retry_model, backbone=backbone,
+                                       enable_proximity_bias=enable_proximity_bias,
+                                       proximity_bias_alpha=proximity_bias_alpha)
         case _:
             raise vs.Error(f"vs_cmnet2: encode_mode must be 0 or 1, got {encode_mode}")
 
