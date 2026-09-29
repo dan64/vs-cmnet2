@@ -131,7 +131,13 @@ class KeyValueMemoryStore:
         if self.use_count is None or self.life_count is None:
             return
 
-        if self.size < max_size:
+        # Nothing to remove at or below max_size.  The caller (MemoryManager.
+        # add_memory) invokes this with size >= max_size, so size == max_size
+        # is reachable: there k = size - max_size == 0, torch.topk(..., k=0)
+        # returns an empty tensor and "values[-1]" below raises IndexError.
+        # Deliberate local divergence from upstream XMem, which checks only
+        # size < max_size.
+        if self.size <= max_size:
             return
 
         usage = self.get_usage().flatten()

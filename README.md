@@ -11,7 +11,7 @@ Colorizes black-and-white clips by propagating color from reference frames using
 Download the latest wheel from [Releases](https://github.com/dan64/vs-cmnet2/releases) and install:
 
 ```bash
-pip install vscmnet2-1.0.9-py3-none-any.whl
+pip install vscmnet2-1.2.0-py3-none-any.whl
 ```
 
 ### Plugins setup
@@ -169,6 +169,38 @@ Reference frames are read from a folder. Files must be named `ref_NNNNNN.png` (e
 clip = vs_cmnet2(clip, sc_framedir="/path/to/refs", method=4)
 ```
 
+### Select reference frames (semantic dedup)
+
+Deduplicate near-identical B&W reference candidates via DINOv3 clustering before sending them to
+your colorization tool, reducing redundant work without losing scene coverage. Run this on the
+candidate folder (e.g. produced by `vs_export_reference_frames`) before colorizing it, then point
+`sc_framedir` above at the output folder.
+
+```python
+from vscmnet2 import vs_select_reference_frames
+
+clip = vs_select_reference_frames(
+    ref_framedir="/path/to/candidates",
+    out_framedir="/path/to/selected",
+    similarity_threshold=0.95,
+    select_window=50,
+    dry_run=True,       # inspect cluster_debug.html before copying files for real
+    debug_html=True,
+)
+clip.set_output()
+```
+
+`vs_select_reference_frames` is lazy — the actual GPU/file-system work runs only as frames are
+requested, so it won't freeze vsedit's UI (`clip.num_frames` equals the candidate count; run it
+under `vspipe`, or set the output and hit render, to process them all). Results land in
+`cluster_map.json`/`cluster_debug.html` in `out_framedir`, not in the clip itself. For a plain
+Python script outside a VapourSynth graph, or when you need the summary dict directly, call
+`select_reference_frames(...)` instead — same parameters, runs eagerly, returns a dict.
+
+`similarity_threshold=0.95` is calibrated for the default `input_size=224`. Raising `input_size`
+shifts the similarity distribution upward, so the threshold needs raising too or clusters will
+merge more aggressively than intended — review `cluster_debug.html` before trusting a new value.
+
 ### Custom render speed and retry
 
 ```python
@@ -266,6 +298,31 @@ clip = vs_read_video("/path/to/video.mkv")
 | `proximity_bias_alpha` | float | `None` | Strength of the proximity bias. `None` = use `vsslib/models.json` |
 | `torch_dir` | str | model dir | Torch hub cache location |
 
+### `vs_select_reference_frames` / `select_reference_frames`
+
+Same parameters for both — `vs_select_reference_frames` (lazy, returns a `VideoNode`, for use in
+a `.vpy` script) and `select_reference_frames` (eager, returns a dict, for plain Python).
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `ref_framedir` | str | — | Directory with candidate reference frames (format: ref_NNNNNN.ext) |
+| `out_framedir` | str | — | Destination for the selected representatives; must differ from `ref_framedir` |
+| `similarity_threshold` | float | `0.95` | Cosine similarity above which two candidates are merged; calibrated for `input_size=224` |
+| `select_window` | int | `50` | Candidates to compare against, in list positions (not video frames); `0` = compare all candidates. Independent of `max_memory_frames` — the two are not required to match |
+| `input_size` | int | `224` | Square resolution fed to DINOv3 (must be a multiple of 16) |
+| `batch_size` | int | `32` | Images per extraction batch |
+| `device` | str | `"cuda"` | `cuda` or `cpu` |
+| `dry_run` | bool | `False` | If `True`, write `cluster_map.json`/`cluster_debug.html` only, transfer no files |
+| `move_files` | bool | `False` | Move (`True`) instead of copy (`False`) the representatives into `out_framedir`; candidates left out of the selection are never touched either way |
+| `debug_html` | bool | `False` | If `True`, write `cluster_debug.html` (multi-member clusters only) for visual inspection |
+
+`vs_select_reference_frames` returns a `VideoNode` with `length` equal to the candidate count and
+no meaningful frame content — results are written to `cluster_map.json`/`cluster_debug.html`, not
+carried by the clip. `select_reference_frames` returns a dict instead:
+`n_candidates`, `n_clusters`, `reduction_ratio`, `cluster_sizes`, `out_framedir`,
+`cluster_map` (path to `cluster_map.json`), `select_window`, `similarity_threshold`, `debug_html`
+(path, or `None` if `debug_html=False`).
+
 ### `vs_cmnet2dit`
 
 | Parameter | Type | Default | Description |
@@ -299,6 +356,7 @@ The DiT variant offloads reference-frame colorization to an external DiT (Diffus
 vscmnet2/
 ├── __init__.py          # Main VapourSynth wrapper (vs_cmnet2, vs_cmnet2dit, vs_merge, vs_read_video)
 ├── cmnet2_utils.py      # Format conversion, luma protection, video I/O
+├── cmnet2_refselect.py  # select_reference_frames / vs_select_reference_frames: DINOv3 dedup
 ├── colormnet2/          # CMNET2 core (colorization engine)
 │   ├── __init__.py      # vs_colormnet2_local / vs_colormnet2_remote
 │   ├── colormnet2_render.py   # Render class (ColorMNetRender2)

@@ -4,7 +4,7 @@ Author: Dan64
 Date: 2026-06-07
 version: 
 LastEditors: Dan64
-LastEditTime: 2026-09-26
+LastEditTime: 2026-09-28
 ------------------------------------------------------------------------------- 
 Description:
 ------------------------------------------------------------------------------- 
@@ -30,6 +30,7 @@ import math
 
 from .cmnet2_utils import convert_format_RGB24, restore_format, VIDEO_EXTENSIONS, get_ref_number
 from .cmnet2_utils import pil_cmnet2_colorize
+from .cmnet2_refselect import select_reference_frames, vs_select_reference_frames
 from .vsslib.mcomb import vs_combine_models, vs_ext_reference_clip
 from .vsslib.vsfilters import vs_simple_merge, vs_sc_colormap, vs_sc_dark_tweak
 from .vsslib.vsfilters import  vs_sc_chroma_bright_tweak, vs_recover_clip_luma
@@ -45,7 +46,7 @@ from .colormnet2 import vs_colormnet2_range
 
 from .vsslib import constants as constants
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import warnings
 import logging
