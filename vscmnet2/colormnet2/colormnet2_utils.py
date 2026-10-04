@@ -169,12 +169,23 @@ class PermMemWindow:
     def preload_initial_start(self, ref_start: int):
         """
            Load the first window_size reference images into permanent memory before the colorization loop.
-           The loading start from ref_start
+           The window starts at the first reference at or after ref_start: refs [idx, idx+n_load)
+           are preloaded, next_ref_idx continues right after them, and ref_half_idx/activation_frame
+           are set in the same ABSOLUTE coordinates. Without this, for any ref_start past the first
+           window position the initial preload either loads nothing (range negative) or skips ahead,
+           and the sliding window ends up misaligned with the colorized frames (or frozen on the
+           last refs of the clip).
         """
         idx = self.reader.get_ref_idx(ref_start)
-        for i in range(self.window_size-idx):
+        n_load = min(self.window_size, self.reader.num_ref_imgs - idx)
+        for i in range(n_load):
             self.colorizer.preload_reference(self.reader.get_ref_image(idx+i), frame_idx=self.reader.ref_num_list[idx+i])
-        self.next_ref_idx = idx + self.window_size
+        self.next_ref_idx = idx + n_load
+        # ref_half_idx is kept ABSOLUTE (same coordinate system as next_ref_idx):
+        # adjust() advances both by 1 per slide, preserving the invariant
+        # ref_half_idx == next_ref_idx - window_size + half_offset.
+        half_offset = self.ref_half_idx
+        self.ref_half_idx = min(idx + half_offset, self.reader.num_ref_imgs - 1)
         self.activation_frame = self.reader.ref_num_list[self.ref_half_idx]
 
     def adjust(self, frame_n: int):

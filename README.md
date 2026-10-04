@@ -11,7 +11,7 @@ Colorizes black-and-white clips by propagating color from reference frames using
 Download the latest wheel from [Releases](https://github.com/dan64/vs-cmnet2/releases) and install:
 
 ```bash
-pip install vscmnet2-1.2.0-py3-none-any.whl
+pip install vscmnet2-1.2.1-py3-none-any.whl
 ```
 
 ### Plugins setup
